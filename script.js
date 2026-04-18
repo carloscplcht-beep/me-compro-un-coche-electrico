@@ -312,6 +312,8 @@ function bindEvents() {
         persistDraftIfEnabled();
       });
       input.addEventListener("input", () => {
+        // Evita recalcular con un valor antiguo si el usuario edita y envía sin perder el foco.
+        delete input.dataset.numericValue;
         clearFieldState(question.id);
         updateProgress();
         persistDraftIfEnabled();
@@ -520,9 +522,14 @@ function calculateEconomicAnalysis(answers) {
 
   const currentAnnualCost = answers.kmYear * currentCostPerKm;
   const estimatedElectricAnnualCost = answers.kmYear * electricCostPerKmAdjusted;
+  const currentMonthlyCost = currentAnnualCost / 12;
+  const estimatedElectricMonthlyCost = estimatedElectricAnnualCost / 12;
   const annualSavings = currentAnnualCost - estimatedElectricAnnualCost;
   const monthlySavings = annualSavings / 12;
   const savingsPerKm = currentCostPerKm - electricCostPerKmAdjusted;
+  const savings3Years = annualSavings * 3;
+  const savings5Years = annualSavings * 5;
+  const savings10Years = annualSavings * 10;
   const initialPremium = answers.evPrice - answers.iceAlternativePrice;
 
   let amortizationYears = null;
@@ -544,9 +551,14 @@ function calculateEconomicAnalysis(answers) {
     electricCostPerKmAdjusted,
     currentAnnualCost,
     estimatedElectricAnnualCost,
+    currentMonthlyCost,
+    estimatedElectricMonthlyCost,
     annualSavings,
     monthlySavings,
     savingsPerKm,
+    savings3Years,
+    savings5Years,
+    savings10Years,
     initialPremium,
     amortizationYears,
     amortizationMessage,
@@ -707,118 +719,558 @@ function determineVerdict(answers, economic, scoring) {
 
 function buildRecommendation(label, flags) {
   if (label === "Muy viable") {
-    return "El vehículo eléctrico encaja muy bien con tu patrón de uso.";
+    return "Sí, tiene bastante sentido en tu caso.";
   }
 
   if (label === "Viable con condiciones") {
     if (flags.criticalChargingBlock) {
-      return "Podría ser una buena opción, pero depende de resolver primero la carga habitual.";
+      return "Puede encajar, pero no lo compraría sin resolver antes la carga habitual.";
     }
-    return "Podría ser una buena opción, pero conviene asegurar primero la rutina de carga y el encaje económico.";
+    return "Puede encajar, pero solo si dejas bien cerrada la rutina de carga y el precio de entrada.";
   }
 
   if (label === "Viable pero poco rentable") {
-    return "La compra podría tener sentido ambiental o tecnológico, pero no por ahorro.";
+    return "Puede funcionar, aunque no lo compraría pensando sobre todo en ahorrar.";
   }
 
   if (label === "Poco viable") {
-    return "En tu caso, hoy por hoy, un eléctrico puro puede no ser la alternativa más cómoda.";
+    return "Solo lo vería razonable si aceptas bastante más fricción de uso.";
   }
 
   if (flags.noSavings || flags.budgetBlock) {
-    return "Conviene esperar o valorar una alternativa híbrida o térmica eficiente.";
+    return "Ahora mismo no lo veo como la alternativa más equilibrada para ti.";
   }
 
-  return "Podría ser una buena opción, pero depende de resolver primero la carga habitual.";
+  return "Antes de decidir, resolvería primero la parte práctica de la carga.";
+}
+
+function buildDecisionHeadline(verdict, answers, economic) {
+  if (verdict.label === "Muy viable") {
+    if (economic.initialPremium <= 0) return "Sí, encaja bien y además no parte penalizado por precio";
+    if (economic.annualSavings > 1200) return "Sí, encaja bien contigo";
+    return "Sí, tiene bastante sentido en tu caso";
+  }
+
+  if (verdict.label === "Viable con condiciones") {
+    if (answers.nightCharging === "no" && answers.workCharging === "no") return "Sí, pero no sin cerrar antes la carga";
+    if (answers.evPrice > answers.maxBudget) return "Sí, pero con el precio muy vigilado";
+    return "Sí, pero con condiciones claras";
+  }
+
+  if (verdict.label === "Viable pero poco rentable") {
+    return "Puede funcionar, pero no lo justificaría por ahorro";
+  }
+
+  if (verdict.label === "Poco viable") {
+    return "Puede funcionar, aunque con bastante fricción";
+  }
+
+  if (verdict.criticalChargingBlock) return "Ahora mismo no lo veo viable para tu caso";
+  if (verdict.noSavings) return "Ahora mismo no parece la mejor compra para ti";
+  return "Ahora mismo no es la opción más equilibrada";
+}
+
+function buildDecisionSubtitle(verdict, answers, economic) {
+  if (verdict.label === "Muy viable") {
+    return `Tu uso diario, la infraestructura de carga y el coste operativo juegan a favor del eléctrico. ${economic.initialPremium <= 0 ? "Además, no parte con sobrecoste frente a la alternativa térmica que comparas." : "La compra no parece forzada y el ahorro acompaña."}`;
+  }
+
+  if (verdict.label === "Viable con condiciones") {
+    return `El encaje existe, pero depende de asegurar bien ${answers.nightCharging === "no" && answers.workCharging === "no" ? "la rutina de carga" : "los detalles prácticos del uso"} y de que el precio final no se te vaya. La decisión es defendible, aunque no automática.`;
+  }
+
+  if (verdict.label === "Viable pero poco rentable") {
+    return "Por uso podría tener sentido, pero la parte económica sale demasiado justa. Si das el paso, debería ser por conjunto de producto, etiqueta o experiencia, no solo por coste.";
+  }
+
+  if (verdict.label === "Poco viable") {
+    return "Hay varios puntos de fricción que no impiden por completo la compra, pero sí la vuelven menos cómoda y menos evidente de lo que convendría para acertar.";
+  }
+
+  return "Con los datos introducidos, las barreras prácticas o económicas pesan demasiado. Antes de plantearte la compra, conviene resolver el punto que más condiciona tu caso.";
+}
+
+function selectTopFactors(items, fallbackItems) {
+  const unique = [];
+
+  items
+    .slice()
+    .sort((left, right) => right.score - left.score)
+    .forEach((item) => {
+      if (!unique.some((existing) => existing.title === item.title)) {
+        unique.push(item);
+      }
+    });
+
+  fallbackItems.forEach((item) => {
+    if (unique.length < 3 && !unique.some((existing) => existing.title === item.title)) {
+      unique.push(item);
+    }
+  });
+
+  return unique.slice(0, 3);
+}
+
+function buildCaseFactors(answers, economic) {
+  const positive = [];
+  const negative = [];
+
+  if (answers.nightCharging === "si") {
+    positive.push({
+      score: 98,
+      title: "Carga habitual resuelta",
+      detail: "Podrías cargar por la noche, que es el punto que más simplifica el uso diario de un eléctrico.",
+    });
+  } else if (answers.workCharging === "si") {
+    positive.push({
+      score: 84,
+      title: "Apoyo de carga en el trabajo",
+      detail: "Tienes una alternativa recurrente para no depender solo de la red pública.",
+    });
+  } else if (answers.ownGarage === "si" && answers.canInstallCharger === "si") {
+    positive.push({
+      score: 76,
+      title: "Instalación de carga viable",
+      detail: "Disponer de plaza propia y poder instalar punto de carga juega claramente a favor del encaje.",
+    });
+  }
+
+  if (answers.kmDaily <= 80) {
+    positive.push({
+      score: 78,
+      title: "Kilometraje diario muy compatible",
+      detail: `Con ${formatPlainNumber(answers.kmDaily, 0)} km al día, la autonomía no debería apretarte en el uso normal.`,
+    });
+  } else if (answers.kmDaily <= 150) {
+    positive.push({
+      score: 58,
+      title: "Uso diario asumible",
+      detail: "Tu kilometraje diario sigue siendo razonable para muchos eléctricos si la carga está bien resuelta.",
+    });
+  }
+
+  if (answers.longTripFrequency === "nunca" || answers.longTripFrequency === "1-2-ano") {
+    positive.push({
+      score: 74,
+      title: "Pocos viajes largos",
+      detail: "La recarga en carretera tendría poco peso real en tu año, así que la logística sería más sencilla.",
+    });
+  } else if (answers.longTripFrequency === "mensual") {
+    positive.push({
+      score: 42,
+      title: "Viajes largos asumibles",
+      detail: "Hay trayectos exigentes, pero no con una frecuencia tan alta como para desaconsejar el cambio por sí sola.",
+    });
+  }
+
+  if (answers.drivingType === "ciudad") {
+    positive.push({
+      score: 62,
+      title: "Uso urbano favorable",
+      detail: "La conducción urbana suele sacar muy buen partido al menor coste por km y a la eficiencia del eléctrico.",
+    });
+  } else if (answers.drivingType === "mixto") {
+    positive.push({
+      score: 52,
+      title: "Conducción mixta bien resuelta",
+      detail: "El patrón de uso mixto sigue siendo compatible con un eléctrico si la carga acompaña.",
+    });
+  }
+
+  if (answers.solarPanels === "si") {
+    positive.push({
+      score: 68,
+      title: "Placas solares a favor",
+      detail: "El autoconsumo mejora el coste de recarga y refuerza la parte económica del cambio.",
+    });
+  }
+
+  if (economic.priceElectricityEurKwh <= 0.15) {
+    positive.push({
+      score: 64,
+      title: "Electricidad barata",
+      detail: "Tu precio eléctrico está en una zona especialmente favorable para que el coste por km salga bien.",
+    });
+  }
+
+  if (economic.annualSavings > 1200) {
+    positive.push({
+      score: 95,
+      title: "Ahorro anual alto",
+      detail: `La estimación apunta a ${formatCurrency(economic.annualSavings)} menos al año en coste de uso.`,
+    });
+  } else if (economic.annualSavings >= 700) {
+    positive.push({
+      score: 82,
+      title: "Ahorro anual relevante",
+      detail: `El ahorro estimado de ${formatCurrency(economic.annualSavings)} al año ya da respaldo económico a la decisión.`,
+    });
+  } else if (economic.annualSavings > 0) {
+    positive.push({
+      score: 58,
+      title: "Ahorro positivo, aunque moderado",
+      detail: `Sí hay mejora de coste de uso, aunque todavía no es especialmente contundente: ${formatCurrency(economic.annualSavings)} al año.`,
+    });
+  }
+
+  if (economic.initialPremium <= 0) {
+    positive.push({
+      score: 88,
+      title: "No hay sobrecoste inicial",
+      detail: "El eléctrico no parte más caro que la alternativa térmica que has puesto como referencia.",
+    });
+  } else if (economic.amortizationYears !== null && economic.amortizationYears <= 5) {
+    positive.push({
+      score: 76,
+      title: "Amortización razonable",
+      detail: `El sobrecoste inicial se recuperaría en un plazo estimado de ${formatYears(economic.amortizationYears)}.`,
+    });
+  }
+
+  if (answers.nightCharging === "no" && answers.workCharging === "no" && answers.publicChargingWillingness === "no") {
+    negative.push({
+      score: 100,
+      title: "Sin alternativa operativa real",
+      detail: "Sin carga en casa, sin carga en el trabajo y sin disposición a usar la red pública, el eléctrico queda muy comprometido.",
+    });
+  } else if (answers.nightCharging === "no" && answers.workCharging === "no") {
+    negative.push({
+      score: 96,
+      title: "Sin una carga habitual clara",
+      detail: "Dependerías de soluciones menos cómodas o menos previsibles para la recarga del día a día.",
+    });
+  }
+
+  if (answers.canInstallCharger === "no-se") {
+    negative.push({
+      score: 54,
+      title: "La carga en casa sigue sin confirmar",
+      detail: "Mientras no sepas si puedes instalar punto de carga, la decisión sigue teniendo una incertidumbre importante.",
+    });
+  }
+
+  if (answers.longTripFrequency === "semanal") {
+    negative.push({
+      score: 86,
+      title: "Viajes largos muy frecuentes",
+      detail: "Tener trayectos de más de 300 km de forma semanal hace que la planificación pese mucho en la experiencia real.",
+    });
+  } else if (answers.longTripFrequency === "frecuente") {
+    negative.push({
+      score: 76,
+      title: "Viajes largos repetidos",
+      detail: "La recurrencia de viajes exigentes añade fricción y resta sencillez a la compra.",
+    });
+  } else if (answers.longTripFrequency === "mensual") {
+    negative.push({
+      score: 48,
+      title: "Hay viajes largos que condicionan",
+      detail: "No son constantes, pero sí suficientes como para obligarte a mirar autonomía real y red de recarga.",
+    });
+  }
+
+  if (answers.comfortablePlanningCharges === "no") {
+    negative.push({
+      score: 72,
+      title: "Poca tolerancia a planificar recargas",
+      detail: "Si no te sientes cómodo planificando, cualquier fricción en carretera se notará más en el uso real.",
+    });
+  }
+
+  if (
+    answers.mainVehicle === "si" &&
+    (answers.longTripFrequency === "frecuente" || answers.longTripFrequency === "semanal") &&
+    answers.comfortablePlanningCharges === "no"
+  ) {
+    negative.push({
+      score: 88,
+      title: "Sería tu coche principal en un uso exigente",
+      detail: "Al ser el vehículo principal, los condicionantes de viaje tienen más impacto en la decisión final.",
+    });
+  }
+
+  if (answers.drivingType === "carretera") {
+    negative.push({
+      score: 44,
+      title: "Predomina la carretera",
+      detail: "En autovía el consumo eléctrico estimado sube y el ahorro tiende a estrecharse frente a un uso más urbano.",
+    });
+  }
+
+  if (economic.annualSavings <= 0) {
+    negative.push({
+      score: 94,
+      title: "No sale ahorro de uso",
+      detail: "Con los precios introducidos no aparece mejora económica frente a tu coche actual.",
+    });
+  } else if (economic.annualSavings < 300) {
+    negative.push({
+      score: 70,
+      title: "El ahorro es demasiado corto",
+      detail: `El ahorro estimado existe, pero con ${formatCurrency(economic.annualSavings)} al año cuesta que la compra destaque por rentabilidad.`,
+    });
+  }
+
+  if (economic.amortizationYears !== null && economic.amortizationYears > 8) {
+    negative.push({
+      score: 78,
+      title: "Amortización larga",
+      detail: `El sobrecoste inicial tardaría en recuperarse unos ${formatYears(economic.amortizationYears)}, que ya es un plazo largo para usarlo como argumento principal.`,
+    });
+  }
+
+  if (answers.evPrice > answers.maxBudget * 1.2) {
+    negative.push({
+      score: 92,
+      title: "Precio claramente por encima del presupuesto",
+      detail: "El eléctrico supera tu presupuesto máximo en más de un 20%, así que la compra nace tensionada.",
+    });
+  } else if (answers.evPrice > answers.maxBudget) {
+    negative.push({
+      score: 70,
+      title: "El precio aprieta tu presupuesto",
+      detail: "Aunque no sea un desvío extremo, el precio del eléctrico ya entra por encima del techo que has marcado.",
+    });
+  }
+
+  const positiveFallback = [
+    {
+      score: 20,
+      title: "No hay un bloqueo técnico absoluto",
+      detail: "El caso no queda descartado de entrada, aunque necesite más matiz y comparación real antes de decidir.",
+    },
+    {
+      score: 18,
+      title: "El patrón diario sigue siendo analizable",
+      detail: "Tu uso no convierte automáticamente al eléctrico en una mala idea, pero tampoco basta por sí solo para comprar.",
+    },
+    {
+      score: 16,
+      title: "Hay margen para afinar la elección",
+      detail: "Un modelo mejor ajustado o una oferta distinta podrían mover el equilibrio de forma relevante.",
+    },
+  ];
+
+  const negativeFallback = [
+    {
+      score: 20,
+      title: "La decisión necesita más contraste",
+      detail: "No es un caso para decidir solo por intuición; conviene aterrizar precio final, autonomía real y rutina de carga.",
+    },
+    {
+      score: 18,
+      title: "La rentabilidad no es automática",
+      detail: "Aunque el encaje pueda existir, el ahorro y la comodidad dependen mucho de los detalles concretos del caso.",
+    },
+    {
+      score: 16,
+      title: "Falta aterrizar el modelo concreto",
+      detail: "La decisión final puede cambiar bastante según autonomía real, precio y disponibilidad del coche que compres.",
+    },
+  ];
+
+  return {
+    positive: selectTopFactors(positive, positiveFallback),
+    negative: selectTopFactors(negative, negativeFallback),
+  };
+}
+
+function buildAdvisorView(answers, economic, verdict) {
+  if (verdict.criticalChargingBlock) {
+    return "Con estos datos, yo no daría el paso hasta resolver una carga habitual real. Sin casa, sin trabajo y sin disposición a la red pública, el uso cotidiano quedaría demasiado comprometido para recomendar un eléctrico puro con tranquilidad.";
+  }
+
+  if (verdict.budgetBlock && verdict.noSavings) {
+    return "Si el motivo principal es ahorrar, yo no lo compraría en este escenario. Parte por encima del presupuesto y además no recupera esa diferencia por coste de uso, así que la operación nace floja por los dos lados.";
+  }
+
+  if (verdict.label === "Muy viable") {
+    return `Con tu patrón de uso, yo sí vería lógico avanzar hacia un eléctrico. ${answers.nightCharging === "si" || answers.workCharging === "si" ? "La parte operativa está bien encajada" : "La operativa es manejable"} y el ahorro estimado no suena forzado, así que la compra tiene base más allá de la novedad o la etiqueta.`;
+  }
+
+  if (verdict.label === "Viable con condiciones") {
+    return `Con estos datos, yo solo daría el paso si aseguras ${answers.nightCharging === "no" && answers.workCharging === "no" ? "la carga habitual fuera de casa" : "los detalles prácticos de la carga"} y mantienes controlado el precio final. El encaje existe, pero todavía no lo bastante limpio como para comprar sin verificar esas dos piezas.`;
+  }
+
+  if (verdict.label === "Viable pero poco rentable") {
+    return "Si buscas sobre todo ahorrar, yo no lo vería suficientemente sólido. Solo tendría sentido si valoras también la experiencia de uso, el silencio, la etiqueta o una preferencia clara por el eléctrico más allá de la rentabilidad.";
+  }
+
+  if (verdict.label === "Poco viable") {
+    return "Yo sería prudente. No porque sea imposible, sino porque te exigiría aceptar más fricción operativa o financiera de la que normalmente compensa cuando uno busca una compra cómoda y clara.";
+  }
+
+  return "Con este escenario, yo no lo priorizaría ahora mismo. Antes miraría si puedes mejorar la infraestructura de carga, ajustar el precio de compra o incluso esperar una oferta más favorable antes de tomar la decisión.";
+}
+
+function buildNextStep(answers, economic, verdict) {
+  if (answers.canInstallCharger === "no-se") {
+    return "Confirma la viabilidad de instalar un punto de carga en tu plaza.";
+  }
+
+  if (verdict.criticalChargingBlock) {
+    return "Aclara primero dónde cargarías de forma habitual antes de valorar modelos concretos.";
+  }
+
+  if (answers.nightCharging === "no" && answers.workCharging === "no" && answers.publicChargingWillingness === "si") {
+    return "Revisa la red pública de carga que tendrías disponible en tus rutas habituales.";
+  }
+
+  if (answers.longTripFrequency === "frecuente" || answers.longTripFrequency === "semanal") {
+    return "Compara dos modelos eléctricos con autonomía real suficiente para tus viajes más exigentes.";
+  }
+
+  if (answers.evPrice > answers.maxBudget || economic.initialPremium > 0) {
+    return "Valora si el sobrecoste inicial compensa realmente frente a la alternativa térmica.";
+  }
+
+  if (economic.annualSavings <= 0) {
+    return "Si buscas sobre todo ahorro, quizá merece la pena esperar una mejor oferta o ayuda.";
+  }
+
+  return "Compara dos modelos eléctricos concretos para validar autonomía real, precio final y coste de seguro.";
+}
+
+function buildMediumTermLead(economic) {
+  if (economic.annualSavings > 1200) {
+    return "Si mantienes un patrón parecido, el ahorro acumulado empieza a ser realmente visible a medio plazo.";
+  }
+
+  if (economic.annualSavings > 0) {
+    return "Sí hay mejora económica, aunque su fuerza depende bastante del precio final y de que mantengas este uso.";
+  }
+
+  if (economic.annualSavings === 0) {
+    return "Con este escenario el coste de uso queda prácticamente empatado: no aparece ahorro acumulado.";
+  }
+
+  return "Con estos datos no se genera ahorro acumulado; el saldo a medio plazo seguiría jugando en contra.";
 }
 
 function buildQualitativeAnalysis(answers, economic, scoring, verdict, coherenceWarnings) {
-  const strengths = [];
-  const weaknesses = [];
-  const recommendations = [];
-
-  if (answers.nightCharging === "si") strengths.push("Tienes una opción de carga habitual por la noche, que es el escenario más cómodo para un eléctrico.");
-  if (answers.workCharging === "si") strengths.push("La carga en el trabajo aporta una red de seguridad operativa muy valiosa.");
-  if (answers.kmDaily <= 80) strengths.push("Tu kilometraje diario encaja bien con la autonomía habitual de un vehículo eléctrico moderno.");
-  if (answers.longTripFrequency === "nunca" || answers.longTripFrequency === "1-2-ano") strengths.push("Los viajes largos son poco frecuentes, por lo que las paradas de carga tendrían un impacto bajo.");
-  if (economic.annualSavings >= 700) strengths.push("El ahorro anual estimado es suficientemente relevante como para apoyar la decisión por coste de uso.");
-  if (answers.solarPanels === "si") strengths.push("Las placas solares mejoran el coste operativo y elevan la coherencia económica del cambio.");
-
-  if (answers.nightCharging === "no" && answers.workCharging === "no") weaknesses.push("No aparece una fuente de carga habitual clara, lo que reduce comodidad y previsibilidad.");
-  if (answers.longTripFrequency === "frecuente" || answers.longTripFrequency === "semanal") weaknesses.push("La frecuencia de viajes largos introduce una exigencia operativa superior a la media.");
-  if (answers.comfortablePlanningCharges === "no") weaknesses.push("La baja tolerancia a planificar recargas puede hacer que el uso real se perciba más incómodo.");
-  if (economic.annualSavings <= 0) weaknesses.push("Con los precios introducidos no aparece ahorro de uso frente a tu coche actual.");
-  if (economic.amortizationYears !== null && economic.amortizationYears > 8) weaknesses.push("La amortización del sobrecoste inicial se alarga bastante en el tiempo.");
-  if (answers.evPrice > answers.maxBudget * 1.2) weaknesses.push("El precio del eléctrico se sitúa claramente por encima del presupuesto máximo declarado.");
-
-  if (answers.canInstallCharger === "no-se") recommendations.push("Confirma primero si la instalación de un punto de carga en tu plaza es viable y en qué condiciones.");
-  if (answers.nightCharging === "no" && answers.workCharging === "no" && answers.publicChargingWillingness === "si") recommendations.push("Antes de decidir, revisa disponibilidad, precios y fiabilidad de la red pública en tus trayectos habituales.");
-  if (economic.annualSavings > 0 && economic.annualSavings < 700) recommendations.push("Si priorizas la rentabilidad, compara modelos eléctricos más eficientes o con mejor precio de compra.");
-  if (answers.evPrice > answers.maxBudget * 1.2) recommendations.push("Puede tener más sentido esperar ayudas, ofertas o valorar un modelo eléctrico más accesible.");
-  if (answers.mainVehicle === "si" && (answers.longTripFrequency === "frecuente" || answers.longTripFrequency === "semanal") && answers.comfortablePlanningCharges === "no") recommendations.push("Si buscas máxima despreocupación en viaje, merece la pena comparar también híbridos enchufables o térmicos eficientes.");
-  if (recommendations.length === 0) recommendations.push("El siguiente paso razonable es comparar modelos concretos, autonomía real y coste de seguro antes de decidir.");
-  if (strengths.length === 0) strengths.push("No aparecen ventajas dominantes muy claras, lo que ya es una señal de prudencia en la decisión.");
-  if (weaknesses.length === 0) weaknesses.push("No destacan barreras críticas evidentes en los datos introducidos.");
+  const caseFactors = buildCaseFactors(answers, economic);
+  const strengths = caseFactors.positive.map((item) => `${item.title}. ${item.detail}`);
+  const weaknesses = caseFactors.negative.map((item) => `${item.title}. ${item.detail}`);
 
   const paragraphs = [
-    `${verdict.label} para tu escenario actual. El encaje práctico se apoya en que ${buildOperationalLead(answers)}, mientras que ${buildOperationalRisk(answers)}.`,
-    `Desde el punto de vista operativo, el nivel de comodidad esperado es ${getComfortLevel(answers)}. En tu caso ${TRIP_FREQUENCY_TEXT[answers.longTripFrequency]} y la conducción predominante es ${humanizeDrivingType(answers.drivingType)}, dos factores que pesan bastante en el uso real.`,
-    `Económicamente, la valoración general es ${getEconomicView(economic)}: el coste actual estimado es de ${formatCurrency(economic.currentAnnualCost)} al año frente a ${formatCurrency(economic.estimatedElectricAnnualCost)} en el escenario eléctrico. ${buildAmortizationSentence(economic)}`,
-    `La conclusión final es que ${buildFinalConclusion(verdict, scoring, coherenceWarnings.length > 0)}.`,
+    `El resultado sale ${verdict.label.toLowerCase()} porque ${caseFactors.positive[0].title.toLowerCase()} pesa a favor, pero ${caseFactors.negative[0].title.toLowerCase()} sigue condicionando bastante la decisión.`,
+    `En el día a día, ${buildOperationalLead(answers)} y ${buildOperationalRisk(answers)}. Eso deja una comodidad operativa ${getComfortLevel(answers)} para convivir con un eléctrico como coche ${answers.mainVehicle === "si" ? "principal" : "secundario"}.`,
+    `En dinero, pasarías de unos ${formatCurrency(economic.currentAnnualCost)} al año a ${formatCurrency(economic.estimatedElectricAnnualCost)} en el escenario eléctrico. ${buildAmortizationSentence(economic)}`,
+    `Visto en conjunto, ${buildFinalConclusion(verdict, scoring, coherenceWarnings.length > 0)}.`,
   ];
 
-  return { strengths, weaknesses, recommendations, paragraphs };
+  return {
+    strengths,
+    weaknesses,
+    whyPositive: caseFactors.positive,
+    whyNegative: caseFactors.negative,
+    decisionHeadline: buildDecisionHeadline(verdict, answers, economic),
+    decisionSubtitle: buildDecisionSubtitle(verdict, answers, economic),
+    advisorView: buildAdvisorView(answers, economic, verdict),
+    nextStep: buildNextStep(answers, economic, verdict),
+    mediumTermLead: buildMediumTermLead(economic),
+    paragraphs,
+  };
 }
 
 function renderResults(payload) {
-  const { answers, economic, scoring, verdict, coherenceWarnings, narrative } = payload;
+  const { economic, scoring, verdict, coherenceWarnings, narrative } = payload;
   const analysisDate = new Intl.DateTimeFormat("es-ES", { dateStyle: "long" }).format(new Date());
+  const amortizationHighlight = getAmortizationHighlight(economic);
 
   dom.resultsContent.innerHTML = `
-    <div class="results-grid">
-      <div class="result-stack">
-        <article class="result-card result-card--hero reveal">
+    <article class="result-card result-card--hero decision-hero reveal">
+      <div class="decision-hero__layout">
+        <div class="decision-hero__copy">
           <span class="verdict-badge ${getVerdictBadgeClass(verdict.tone)}">${verdict.label}</span>
-          <h3 class="verdict-title">${verdict.recommendation}</h3>
-          <p class="recommendation">Resultado generado el ${analysisDate}. La lectura combina viabilidad práctica, economía y nivel de fricción esperado.</p>
-          <p class="executive-copy">${narrative.paragraphs[0]}</p>
-          <div class="tag-list">
-            ${buildExecutiveTags(payload).map((tag) => `<span class="tag">${tag}</span>`).join("")}
+          <h3 class="decision-hero__title">${narrative.decisionHeadline}</h3>
+          <p class="decision-hero__subtitle">${narrative.decisionSubtitle}</p>
+        </div>
+        <div class="decision-hero__side">
+          <div class="decision-score-chip">
+            <strong>${Math.round(scoring.total)}</strong>
+            <span>/100</span>
+          </div>
+          <p class="decision-hero__date">Resultado generado el ${analysisDate}</p>
+        </div>
+      </div>
+      <div class="decision-kpis">
+        ${renderDecisionKpi("Ahorro anual estimado", formatSignedCurrency(economic.annualSavings), getSavingsCaption(economic.annualSavings, 1), getValueTone(economic.annualSavings))}
+        ${renderDecisionKpi("Impacto a 5 años", formatSignedCurrency(economic.savings5Years), getSavingsCaption(economic.savings5Years, 5), getValueTone(economic.savings5Years))}
+        ${renderDecisionKpi("Amortización estimada", amortizationHighlight.value, amortizationHighlight.caption, amortizationHighlight.tone)}
+      </div>
+    </article>
+
+    <div class="results-grid results-grid--enhanced">
+      <div class="result-stack">
+        <article class="result-card reveal">
+          <div class="section-heading">
+            <div>
+              <p class="panel__eyebrow">Impacto directo</p>
+              <h4>Comparativa de coste que se entiende rápido</h4>
+            </div>
+            <p class="section-kicker">${buildComparisonLead(economic)}</p>
+          </div>
+
+          <div class="quick-compare-grid">
+            ${renderQuickStat("Coste actual anual", formatCurrency(economic.currentAnnualCost), "Tu coche actual", "neutral")}
+            ${renderQuickStat("Coste eléctrico anual", formatCurrency(economic.estimatedElectricAnnualCost), "Escenario estimado", "positive")}
+            ${renderQuickStat(economic.annualSavings >= 0 ? "Ahorro anual" : "Sobrecoste anual", formatSignedCurrency(economic.annualSavings), economic.annualSavings > 0 ? "Diferencia a favor del eléctrico" : "No mejora el coste de uso", getValueTone(economic.annualSavings))}
+          </div>
+
+          <div class="comparison-chart comparison-chart--enhanced">
+            ${buildCostChartMarkup(economic)}
+          </div>
+
+          <div class="monthly-compare">
+            ${renderMonthlyStat("Coste actual mensual", formatCurrency(economic.currentMonthlyCost))}
+            ${renderMonthlyStat("Coste eléctrico mensual", formatCurrency(economic.estimatedElectricMonthlyCost))}
           </div>
         </article>
 
         <article class="result-card reveal">
-          <h4>Métricas principales</h4>
-          <div class="metric-grid">
-            ${renderMetric("Ahorro anual estimado", formatSignedCurrency(economic.annualSavings))}
-            ${renderMetric("Ahorro mensual estimado", formatSignedCurrency(economic.monthlySavings))}
-            ${renderMetric("Coste actual por km", formatCurrencyPerKm(economic.currentCostPerKm))}
-            ${renderMetric("Coste eléctrico por km", formatCurrencyPerKm(economic.electricCostPerKmAdjusted))}
-            ${renderMetric("Sobrecoste inicial vs. térmico", formatSignedCurrency(economic.initialPremium))}
-            ${renderMetric("Amortización estimada", getAmortizationDisplay(economic))}
+          <div class="section-heading">
+            <div>
+              <p class="panel__eyebrow">Horizonte económico</p>
+              <h4>Impacto económico a medio plazo</h4>
+            </div>
+            <p class="section-kicker">${narrative.mediumTermLead}</p>
           </div>
-          <p class="executive-copy">Ajustes de coste eléctrico: ${economic.adjustments.length > 0 ? economic.adjustments.join(", ") : "sin ajustes adicionales relevantes."}</p>
+
+          <div class="impact-grid">
+            ${renderImpactCard("A 3 años", formatSignedCurrency(economic.savings3Years), getSavingsCaption(economic.savings3Years, 3), getValueTone(economic.savings3Years))}
+            ${renderImpactCard("A 5 años", formatSignedCurrency(economic.savings5Years), getSavingsCaption(economic.savings5Years, 5), getValueTone(economic.savings5Years))}
+            ${renderImpactCard("A 10 años", formatSignedCurrency(economic.savings10Years), getSavingsCaption(economic.savings10Years, 10), getValueTone(economic.savings10Years))}
+          </div>
+
+          <p class="executive-copy">Ajustes aplicados al coste eléctrico: ${economic.adjustments.length > 0 ? economic.adjustments.join(", ") : "sin ajustes adicionales relevantes para el escenario introducido."}</p>
         </article>
 
         <article class="result-card reveal">
-          <h4>Comparativa anual de coste de uso</h4>
-          <div class="comparison-chart">
-            ${buildCostChartMarkup(economic.currentAnnualCost, economic.estimatedElectricAnnualCost)}
+          <div class="section-heading">
+            <div>
+              <p class="panel__eyebrow">Lectura del caso</p>
+              <h4>Qué haría en tu caso</h4>
+            </div>
+            <p class="section-kicker">${verdict.recommendation}</p>
           </div>
-        </article>
-
-        <article class="result-card reveal">
-          <h4>Análisis cualitativo</h4>
+          <p class="advisor-copy">${narrative.advisorView}</p>
           <div class="narrative">
             ${narrative.paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join("")}
           </div>
+        </article>
+
+        <article class="result-card result-card--next-step reveal">
+          <p class="panel__eyebrow">Siguiente paso recomendado</p>
+          <h4 class="next-step__title">${narrative.nextStep}</h4>
+          <p class="next-step__copy">Es la acción con más capacidad para aclarar tu decisión antes de comprometer presupuesto o modelo.</p>
         </article>
       </div>
 
       <div class="result-stack">
         <article class="result-card reveal">
           <div class="score-panel">
-            <div class="score-ring" style="--angle: 0deg;" data-score-ring>
+            <div class="score-ring" data-score-ring>
               <div class="score-ring__content">
                 <span class="score-ring__value" data-score-value>0</span>
                 <span class="score-ring__label">score de viabilidad</span>
@@ -837,26 +1289,44 @@ function renderResults(payload) {
         </article>
 
         <article class="result-card reveal">
-          <h4>Puntos clave</h4>
-          <div class="analysis-columns">
+          <div class="section-heading">
+            <div>
+              <p class="panel__eyebrow">Decisión explicada</p>
+              <h4>Por qué sale este resultado</h4>
+            </div>
+            <p class="section-kicker">Estos son los factores que más están empujando la decisión ahora mismo.</p>
+          </div>
+          <div class="why-grid">
             <section class="insight-card insight-card--positive">
-              <h4>Puntos fuertes</h4>
-              <ul class="insight-list">
-                ${narrative.strengths.map((item) => `<li>${item}</li>`).join("")}
+              <h4>Lo que juega a favor</h4>
+              <ul class="insight-list insight-list--detailed">
+                ${narrative.whyPositive.map(renderWhyFactor).join("")}
               </ul>
             </section>
             <section class="insight-card insight-card--negative">
-              <h4>Puntos débiles</h4>
-              <ul class="insight-list">
-                ${narrative.weaknesses.map((item) => `<li>${item}</li>`).join("")}
+              <h4>Lo que limita la decisión</h4>
+              <ul class="insight-list insight-list--detailed">
+                ${narrative.whyNegative.map(renderWhyFactor).join("")}
               </ul>
             </section>
-            <section class="insight-card insight-card--advice">
-              <h4>Recomendaciones</h4>
-              <ul class="insight-list">
-                ${narrative.recommendations.map((item) => `<li>${item}</li>`).join("")}
-              </ul>
-            </section>
+          </div>
+        </article>
+
+        <article class="result-card reveal">
+          <div class="section-heading">
+            <div>
+              <p class="panel__eyebrow">Datos de referencia</p>
+              <h4>Resumen cuantitativo</h4>
+            </div>
+            <p class="section-kicker">Cifras clave para contrastar compra, uso y retorno económico.</p>
+          </div>
+          <div class="metric-grid metric-grid--executive">
+            ${renderMetric("Ahorro anual estimado", formatSignedCurrency(economic.annualSavings), getValueTone(economic.annualSavings))}
+            ${renderMetric("Ahorro mensual estimado", formatSignedCurrency(economic.monthlySavings), getValueTone(economic.monthlySavings))}
+            ${renderMetric("Coste actual por km", formatCurrencyPerKm(economic.currentCostPerKm))}
+            ${renderMetric("Coste eléctrico por km", formatCurrencyPerKm(economic.electricCostPerKmAdjusted))}
+            ${renderMetric("Sobrecoste inicial vs. térmico", formatSignedCurrency(economic.initialPremium), getValueTone(-economic.initialPremium))}
+            ${renderMetric("Amortización estimada", getAmortizationDisplay(economic), amortizationHighlight.tone)}
           </div>
         </article>
       </div>
@@ -870,17 +1340,19 @@ function renderResults(payload) {
     dom.coherenceWarning.classList.add("is-hidden");
   }
 
-  animateResultVisuals(scoring.total, economic.currentAnnualCost, economic.estimatedElectricAnnualCost);
+  animateResultVisuals(scoring.total);
   initRevealObserver();
 }
 
-function animateResultVisuals(score, currentAnnualCost, electricAnnualCost) {
+function animateResultVisuals(score) {
   const ring = dom.resultsContent.querySelector("[data-score-ring]");
   const scoreValue = dom.resultsContent.querySelector("[data-score-value]");
   const fills = Array.from(dom.resultsContent.querySelectorAll("[data-fill-width]"));
-  const costMax = Math.max(currentAnnualCost, electricAnnualCost, 1);
+  const chartBars = Array.from(dom.resultsContent.querySelectorAll("[data-chart-width]"));
   const duration = 820;
   const start = performance.now();
+
+  if (!ring || !scoreValue) return;
 
   requestAnimationFrame(function animate(now) {
     const progress = Math.min((now - start) / duration, 1);
@@ -893,8 +1365,9 @@ function animateResultVisuals(score, currentAnnualCost, electricAnnualCost) {
       fill.style.width = `${Number(fill.dataset.fillWidth) * eased}%`;
     });
 
-    dom.resultsContent.querySelector("[data-chart-current]").style.width = `${(currentAnnualCost / costMax) * 100 * eased}%`;
-    dom.resultsContent.querySelector("[data-chart-electric]").style.width = `${(electricAnnualCost / costMax) * 100 * eased}%`;
+    chartBars.forEach((bar) => {
+      bar.style.width = `${Number(bar.dataset.chartWidth) * eased}%`;
+    });
 
     if (progress < 1) {
       requestAnimationFrame(animate);
@@ -941,7 +1414,7 @@ function restoreDraft() {
 
     if (question.type === "number") {
       const input = getInputElement(question.id);
-      const numericValue = parseFlexibleNumber(rawValue);
+      const numericValue = parseQuestionNumber(question, rawValue);
       if (numericValue !== null) {
         input.dataset.numericValue = String(numericValue);
         formatNumberInput(input, question, numericValue);
@@ -1018,7 +1491,9 @@ function isQuestionAnswered(question) {
 function getFieldValue(question) {
   if (question.type === "number") {
     const input = getInputElement(question.id);
-    return parseFlexibleNumber(input.dataset.numericValue ?? input.value);
+    const liveValue = parseQuestionNumber(question, input.value);
+    if (liveValue !== null) return liveValue;
+    return parseQuestionNumber(question, input.dataset.numericValue);
   }
 
   if (question.type === "select") {
@@ -1032,7 +1507,12 @@ function getFieldValue(question) {
 function getRawFieldValue(question) {
   if (question.type === "number") {
     const input = getInputElement(question.id);
-    return input.dataset.numericValue ?? input.value.trim();
+    if (input.value.trim() === "") return "";
+
+    const liveValue = parseQuestionNumber(question, input.value);
+    if (liveValue !== null) return String(liveValue);
+
+    return input.value.trim();
   }
 
   return getFieldValue(question);
@@ -1111,41 +1591,167 @@ function buildExecutiveTags(payload) {
 }
 
 function getScoreSummary(score) {
-  if (score >= 75) return "El contexto operativo y económico es fuerte. El cambio a un eléctrico tiene una base clara para funcionar bien.";
-  if (score >= 60) return "Hay un encaje razonable, aunque conviene cerrar bien algunos condicionantes antes de comprar.";
-  if (score >= 40) return "El caso presenta fricciones relevantes. La decisión podría funcionar, pero no sería especialmente cómoda.";
-  return "El escenario actual reúne demasiadas barreras para recomendar un eléctrico puro con tranquilidad.";
+  if (score >= 75) return "El caso sale fuerte: uso, carga y dinero están bastante alineados para recomendar el cambio.";
+  if (score >= 60) return "El encaje existe, aunque todavía depende de cerrar bien algunos condicionantes antes de comprar.";
+  if (score >= 40) return "Hay base para estudiarlo, pero también fricciones suficientes como para no decidir a la ligera.";
+  return "Las barreras prácticas y económicas pesan demasiado como para recomendar un eléctrico puro con comodidad.";
 }
 
-function buildCostChartMarkup(currentAnnualCost, electricAnnualCost) {
+function getValueTone(value) {
+  if (value > 0) return "positive";
+  if (value < 0) return "negative";
+  return "warning";
+}
+
+function getSavingsCaption(value, years) {
+  if (years === 1) {
+    if (value > 0) return "Menor coste de uso estimado frente a tu coche actual.";
+    if (value < 0) return "En este escenario el eléctrico saldría más caro en uso.";
+    return "No aparece una diferencia relevante de coste de uso.";
+  }
+
+  if (value > 0) {
+    return `Saldo acumulado estimado si mantienes este patrón durante ${years} años.`;
+  }
+
+  return "No se genera ahorro acumulado en este escenario.";
+}
+
+function buildComparisonLead(economic) {
+  if (economic.annualSavings > 0) {
+    return `La diferencia estimada es de ${formatCurrency(economic.annualSavings)} al año, equivalente a ${formatCurrency(economic.monthlySavings)} al mes.`;
+  }
+
+  if (economic.annualSavings < 0) {
+    return `Con los precios introducidos, el eléctrico sumaría ${formatCurrency(Math.abs(economic.annualSavings))} más al año en coste de uso.`;
+  }
+
+  return "Con este escenario, el coste de uso queda prácticamente empatado entre ambas opciones.";
+}
+
+function getAmortizationHighlight(economic) {
+  if (economic.initialPremium <= 0) {
+    return {
+      value: "Sin sobrecoste",
+      caption: "El eléctrico no parte más caro que la alternativa térmica introducida.",
+      tone: "positive",
+    };
+  }
+
+  if (economic.annualSavings <= 0 || economic.amortizationYears === null) {
+    return {
+      value: "Sin amortización",
+      caption: "Con este escenario el sobrecoste no se recupera por coste de uso.",
+      tone: "negative",
+    };
+  }
+
+  if (economic.amortizationYears <= 5) {
+    return {
+      value: formatYears(economic.amortizationYears),
+      caption: "Plazo razonable para recuperar el sobrecoste inicial.",
+      tone: "positive",
+    };
+  }
+
+  if (economic.amortizationYears <= 8) {
+    return {
+      value: formatYears(economic.amortizationYears),
+      caption: "La amortización existe, pero ya exige mirar el plazo con calma.",
+      tone: "warning",
+    };
+  }
+
+  return {
+    value: formatYears(economic.amortizationYears),
+    caption: "El retorno económico existe, pero llega demasiado tarde para ser un argumento fuerte.",
+    tone: "negative",
+  };
+}
+
+function renderDecisionKpi(label, value, caption, tone = "neutral") {
+  return `
+    <div class="decision-kpi decision-kpi--${tone}">
+      <span class="decision-kpi__label">${label}</span>
+      <strong class="decision-kpi__value">${value}</strong>
+      <span class="decision-kpi__caption">${caption}</span>
+    </div>
+  `;
+}
+
+function renderQuickStat(label, value, caption, tone = "neutral") {
+  return `
+    <div class="quick-stat quick-stat--${tone}">
+      <span class="quick-stat__label">${label}</span>
+      <strong class="quick-stat__value">${value}</strong>
+      <span class="quick-stat__caption">${caption}</span>
+    </div>
+  `;
+}
+
+function renderMonthlyStat(label, value) {
+  return `
+    <div class="monthly-stat">
+      <span class="monthly-stat__label">${label}</span>
+      <strong class="monthly-stat__value">${value}</strong>
+    </div>
+  `;
+}
+
+function renderImpactCard(label, value, caption, tone = "neutral") {
+  return `
+    <div class="impact-card impact-card--${tone}">
+      <span class="impact-card__label">${label}</span>
+      <strong class="impact-card__value">${value}</strong>
+      <span class="impact-card__caption">${caption}</span>
+    </div>
+  `;
+}
+
+function renderChartRow(label, value, width, tone) {
   return `
     <div class="chart-row">
       <div class="chart-row__meta">
-        <span class="chart-row__label">Coste anual actual</span>
-        <span class="chart-row__value">${formatCurrency(currentAnnualCost)}</span>
+        <span class="chart-row__label">${label}</span>
+        <span class="chart-row__value">${value}</span>
       </div>
       <div class="chart-row__track">
-        <div class="chart-row__fill chart-row__fill--current" data-chart-current></div>
-      </div>
-    </div>
-    <div class="chart-row">
-      <div class="chart-row__meta">
-        <span class="chart-row__label">Coste anual estimado en eléctrico</span>
-        <span class="chart-row__value">${formatCurrency(electricAnnualCost)}</span>
-      </div>
-      <div class="chart-row__track">
-        <div class="chart-row__fill chart-row__fill--electric" data-chart-electric></div>
+        <div class="chart-row__fill chart-row__fill--${tone}" data-chart-width="${width}"></div>
       </div>
     </div>
   `;
 }
 
-function renderMetric(label, value) {
+function buildCostChartMarkup(economic) {
+  const maxValue = Math.max(
+    economic.currentAnnualCost,
+    economic.estimatedElectricAnnualCost,
+    Math.abs(economic.annualSavings),
+    1
+  );
+
   return `
-    <div class="metric">
+    ${renderChartRow("Coste anual actual", formatCurrency(economic.currentAnnualCost), (economic.currentAnnualCost / maxValue) * 100, "current")}
+    ${renderChartRow("Coste anual estimado en eléctrico", formatCurrency(economic.estimatedElectricAnnualCost), (economic.estimatedElectricAnnualCost / maxValue) * 100, "electric")}
+    ${renderChartRow(economic.annualSavings >= 0 ? "Ahorro anual estimado" : "Sobrecoste anual estimado", formatSignedCurrency(economic.annualSavings), (Math.abs(economic.annualSavings) / maxValue) * 100, economic.annualSavings >= 0 ? "savings" : "risk")}
+  `;
+}
+
+function renderMetric(label, value, tone = "neutral") {
+  return `
+    <div class="metric metric--${tone}">
       <span class="metric__label">${label}</span>
       <span class="metric__value">${value}</span>
     </div>
+  `;
+}
+
+function renderWhyFactor(item) {
+  return `
+    <li>
+      <span class="insight-list__title">${item.title}</span>
+      <span class="insight-list__detail">${item.detail}</span>
+    </li>
   `;
 }
 
@@ -1165,17 +1771,35 @@ function renderScoreRow(label, value, max, isPenalty = false) {
   `;
 }
 
-function parseFlexibleNumber(value) {
+function getNumberParseOptions(question) {
+  return {
+    preferDecimal: question.format === "decimal" || question.format === "currency-decimal",
+  };
+}
+
+function parseQuestionNumber(question, value) {
+  return parseFlexibleNumber(value, getNumberParseOptions(question));
+}
+
+function parseFlexibleNumber(value, options = {}) {
+  // Casos de validación esperados para el parseo numérico:
+  // 1,62 -> 1.62
+  // 1.62 -> 1.62
+  // 2 -> 2
+  // 1,5 -> 1.5
   if (value === null || typeof value === "undefined") return null;
+
+  const { preferDecimal = false } = options;
 
   let normalized = String(value)
     .trim()
     .replace(/\s/g, "")
-    .replace(/[€c]/g, "")
-    .replace(/km\/año|km\/día|l\/100km|l\/100 km|\/litro|\/kWh/gi, "")
     .replace(/[^\d,.\-]/g, "");
 
-  if (!normalized) return null;
+  if (!normalized || normalized === "-" || /[.,]$/.test(normalized)) return null;
+
+  const minusMatches = normalized.match(/-/g) ?? [];
+  if (minusMatches.length > 1 || (minusMatches.length === 1 && !normalized.startsWith("-"))) return null;
 
   const hasComma = normalized.includes(",");
   const hasDot = normalized.includes(".");
@@ -1187,15 +1811,9 @@ function parseFlexibleNumber(value) {
       normalized = normalized.replace(/,/g, "");
     }
   } else if (hasComma) {
-    const decimalPart = normalized.split(",").pop();
-    normalized = decimalPart.length <= 2
-      ? normalized.replace(/\./g, "").replace(",", ".")
-      : normalized.replace(/,/g, "");
+    normalized = normalizeSingleSeparatorNumber(normalized, ",", preferDecimal);
   } else if (hasDot) {
-    const decimalPart = normalized.split(".").pop();
-    normalized = decimalPart.length <= 2
-      ? normalized
-      : normalized.replace(/\./g, "");
+    normalized = normalizeSingleSeparatorNumber(normalized, ".", preferDecimal);
   }
 
   const parsed = Number(normalized);
@@ -1203,8 +1821,11 @@ function parseFlexibleNumber(value) {
 }
 
 function formatNumberInput(input, question, explicitValue = null) {
-  const value = explicitValue ?? parseFlexibleNumber(input.dataset.numericValue ?? input.value);
-  if (value === null) return;
+  const value = explicitValue ?? parseQuestionNumber(question, input.value);
+  if (value === null) {
+    delete input.dataset.numericValue;
+    return;
+  }
 
   input.dataset.numericValue = String(value);
 
@@ -1214,16 +1835,40 @@ function formatNumberInput(input, question, explicitValue = null) {
   }
 
   if (question.format === "currency-decimal") {
-    input.value = formatPlainNumber(value, value % 1 === 0 ? 0 : 2);
+    const maxDigits = question.id === "currentFuelPrice" ? 3 : 2;
+    input.value = formatPlainNumber(value, value % 1 === 0 ? 0 : maxDigits);
     return;
   }
 
-  input.value = formatPlainNumber(value, value % 1 === 0 ? 0 : 1);
+  input.value = formatPlainNumber(value, value % 1 === 0 ? 0 : 2);
 }
 
 function unformatNumberInput(input) {
   if (!input.dataset.numericValue) return;
   input.value = String(input.dataset.numericValue).replace(".", ",");
+}
+
+function normalizeSingleSeparatorNumber(value, separator, preferDecimal = false) {
+  const sign = value.startsWith("-") ? "-" : "";
+  const unsigned = sign ? value.slice(1) : value;
+  const parts = unsigned.split(separator);
+  const decimalPart = parts[parts.length - 1];
+
+  if (!decimalPart) return sign ? `${sign}${parts.join("")}` : parts.join("");
+
+  if (preferDecimal && decimalPart.length <= 3) {
+    return `${sign}${parts.slice(0, -1).join("")}.${decimalPart}`;
+  }
+
+  if (!preferDecimal && parts.length === 2 && decimalPart.length === 3) {
+    return `${sign}${parts.join("")}`;
+  }
+
+  if (parts.length > 2 && !preferDecimal) {
+    return `${sign}${parts.join("")}`;
+  }
+
+  return `${sign}${parts.slice(0, -1).join("")}.${decimalPart}`;
 }
 
 function formatPlainNumber(value, maximumFractionDigits = 1) {
