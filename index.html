@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Herramienta para analizar si la compra de un vehículo eléctrico es viable según tu uso, tu infraestructura de carga y el impacto económico esperado.">
+  <meta name="theme-color" content="#0f766e">
+  <title>¿Me compro un vehículo eléctrico?</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-background" aria-hidden="true">
+    <div class="orb orb--one"></div>
+    <div class="orb orb--two"></div>
+    <div class="grid-glow"></div>
+  </div>
+
+  <header class="hero reveal">
+    <div class="hero__copy">
+      <p class="eyebrow">Analizador de viabilidad personal</p>
+      <h1>¿Me compro un vehículo eléctrico?</h1>
+      <p class="hero__lead">
+        Responde 21 preguntas y obtén un informe claro sobre encaje real, ahorro estimado,
+        fricciones operativas y recomendación final para tu caso.
+      </p>
+      <div class="hero__highlights">
+        <div class="highlight">
+          <span class="highlight__value">21</span>
+          <span class="highlight__label">factores analizados</span>
+        </div>
+        <div class="highlight">
+          <span class="highlight__value">0-100</span>
+          <span class="highlight__label">score de viabilidad</span>
+        </div>
+        <div class="highlight">
+          <span class="highlight__value">PDF</span>
+          <span class="highlight__label">resultado imprimible</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero__visual" aria-hidden="true">
+      <div class="hero-card hero-card--primary">
+        <span class="hero-card__eyebrow">Motor del análisis</span>
+        <strong>Viabilidad práctica + rentabilidad</strong>
+        <p>La herramienta cruza infraestructura, patrón de uso, energía y coste total.</p>
+      </div>
+      <div class="hero-card hero-card--accent">
+        <span class="hero-card__metric">Ahorro</span>
+        <strong>€/año</strong>
+      </div>
+      <div class="hero-score">
+        <div class="hero-score__ring"></div>
+        <div class="hero-score__content">
+          <span>Score</span>
+          <strong>100</strong>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="status-strip reveal">
+      <div class="status-strip__main">
+        <div>
+          <p class="status-strip__label">Progreso del análisis</p>
+          <strong id="progress-text">0 de 21 respuestas completadas</strong>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+          <div id="progress-bar" class="progress-track__bar"></div>
+        </div>
+      </div>
+
+      <div class="status-strip__actions">
+        <label class="toggle" for="storage-toggle">
+          <span>Guardar datos en este dispositivo</span>
+          <span class="toggle__control">
+            <input type="checkbox" id="storage-toggle" checked>
+            <span class="toggle__slider"></span>
+          </span>
+        </label>
+      </div>
+    </section>
+
+    <nav id="section-nav" class="section-nav reveal" aria-label="Bloques del análisis"></nav>
+
+    <div class="workspace">
+      <section class="panel panel--form reveal">
+        <div class="panel__head">
+          <div>
+            <p class="panel__eyebrow">Formulario guiado</p>
+            <h2>Introduce tus datos</h2>
+          </div>
+          <p class="panel__intro">
+            Los campos se validan al momento y el cálculo se apoya en una estimación orientativa,
+            pensada para tomar una decisión mejor informada.
+          </p>
+        </div>
+
+        <form id="analysis-form" novalidate>
+          <div id="question-groups" class="question-groups"></div>
+          <div id="form-warning" class="inline-warning is-hidden" role="status"></div>
+
+          <div class="action-strip">
+            <button type="button" id="reset-form-button" class="button button--secondary">
+              Nuevo análisis
+            </button>
+            <button type="submit" id="calculate-button" class="button button--primary">
+              Calcular viabilidad
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="panel panel--side reveal">
+        <div class="side-stack">
+          <section class="info-card">
+            <p class="panel__eyebrow">Qué recibirás</p>
+            <ul class="clean-list">
+              <li>Veredicto principal con score de viabilidad.</li>
+              <li>Comparativa económica actual vs. estimación eléctrica.</li>
+              <li>Lectura cualitativa con fortalezas, riesgos y recomendaciones.</li>
+              <li>Informe claro para imprimir o guardar en PDF.</li>
+            </ul>
+          </section>
+
+          <section class="info-card">
+            <p class="panel__eyebrow">Cómo se calcula</p>
+            <ul class="clean-list">
+              <li>Coste por kilómetro de tu coche actual.</li>
+              <li>Coste eléctrico estimado según conducción y energía.</li>
+              <li>Score ponderado de carga, uso, economía y tolerancia.</li>
+              <li>Conclusión final en lenguaje natural.</li>
+            </ul>
+          </section>
+
+          <section class="info-card">
+            <p class="panel__eyebrow">Pensado para móvil</p>
+            <p class="muted-copy">
+              La interfaz está optimizada para pantalla táctil, despliegue estático en GitHub Pages
+              y futura integración en una app Android tipo WebView.
+            </p>
+          </section>
+        </div>
+      </aside>
+    </div>
+
+    <section id="results-section" class="results-section is-hidden" aria-live="polite">
+      <div class="results-section__head reveal">
+        <div>
+          <p class="panel__eyebrow">Resultado del análisis</p>
+          <h2>Informe de viabilidad</h2>
+        </div>
+
+        <div class="results-actions">
+          <button type="button" id="print-button" class="button button--secondary">
+            Imprimir / guardar en PDF
+          </button>
+          <button type="button" id="reset-results-button" class="button button--ghost">
+            Nuevo análisis
+          </button>
+        </div>
+      </div>
+
+      <div id="coherence-warning" class="inline-warning is-hidden" role="status"></div>
+      <div id="results-content"></div>
+    </section>
+  </main>
+
+  <footer class="page-footer reveal">
+    <div class="author-card" aria-label="Autoría de la herramienta">
+      <p class="author-card__title">© Carlos Peña Laguna – Herramienta de análisis de viabilidad de vehículo eléctrico</p>
+      <p class="author-card__caption">Uso orientativo. No sustituye asesoramiento profesional.</p>
+    </div>
+    <p class="page-footer__note">
+      Nota metodológica: esta herramienta ofrece una estimación orientativa basada en los datos
+      introducidos, con simplificaciones razonables sobre coste energético, hábitos de uso y
+      viabilidad operativa. Conviene complementar el resultado con la revisión de modelos concretos,
+      puntos de carga disponibles y ofertas reales de mercado.
+    </p>
+  </footer>
+
+  <noscript>
+    <div class="noscript-banner">
+      Esta aplicación necesita JavaScript para calcular el análisis y mostrar el informe.
+    </div>
+  </noscript>
+
+  <script src="script.js"></script>
+</body>
+</html>
