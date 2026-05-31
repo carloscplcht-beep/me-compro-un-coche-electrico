@@ -75,6 +75,7 @@
   let lastLocations = [];
   let visibleCount = PAGE_SIZE;
   let fastestLocationId = null;
+  let suppressMapMovePrompt = false;
 
   document.addEventListener("DOMContentLoaded", () => {
     bindDom();
@@ -113,6 +114,7 @@
     dom.coverageCopy = document.querySelector("#recharge-coverage-copy");
     dom.map = document.querySelector("#recharge-map");
     dom.mapEmpty = document.querySelector("#recharge-map-empty");
+    dom.searchArea = document.querySelector("#recharge-search-area-button");
     dom.updated = document.querySelector("#recharge-updated");
     dom.list = document.querySelector("#recharge-results-list");
     dom.showMore = document.querySelector("#recharge-show-more-button");
@@ -125,6 +127,7 @@
     dom.radius.addEventListener("change", updateRadiusHelp);
     dom.geolocate.addEventListener("click", handleGeolocation);
     dom.reset.addEventListener("click", () => resetRechargeSearch({ keepInput: false }));
+    dom.searchArea?.addEventListener("click", handleSearchCurrentMapArea);
     dom.showMore.addEventListener("click", () => {
       visibleCount += PAGE_SIZE;
       renderLocationCards(lastLocations);
@@ -159,7 +162,22 @@
 
     stationLayer = L.layerGroup().addTo(map);
     centerLayer = L.layerGroup().addTo(map);
+    bindMapInteractionPrompt();
     map.invalidateSize();
+  }
+
+  function bindMapInteractionPrompt() {
+    if (!map) return;
+    map.on("movestart zoomstart", () => {
+      if (!suppressMapMovePrompt) showSearchAreaButton();
+    });
+  }
+
+  function suppressMapPromptBriefly() {
+    suppressMapMovePrompt = true;
+    window.setTimeout(() => {
+      suppressMapMovePrompt = false;
+    }, 450);
   }
 
   async function handleSearchSubmit(event) {
@@ -183,6 +201,16 @@
     hideSuggestions();
     dom.input.value = resolved.center.label;
     await searchNearby(resolved.center);
+  }
+
+  async function handleSearchCurrentMapArea() {
+    if (!map || dom.searchArea?.disabled) return;
+    const center = map.getCenter();
+    await searchNearby({
+      label: "esta zona del mapa",
+      lat: center.lat,
+      lon: center.lng,
+    });
   }
 
   function handleLocationTyping() {
@@ -260,6 +288,7 @@
     visibleCount = PAGE_SIZE;
 
     ensureMap();
+    hideSearchAreaButton();
     setLoading(true, `Consultando ubicaciones de recarga cerca de ${center.label}...`);
     updateRadiusHelp();
 
@@ -397,6 +426,7 @@
 
   function renderMapPoints(locations, center, radiusKm) {
     ensureMap();
+    suppressMapPromptBriefly();
     clearMap();
     if (!map) return;
 
@@ -433,12 +463,13 @@
 
     dom.mapEmpty.hidden = locations.length > 0;
     const leafletBounds = L.latLngBounds(bounds);
-    map.fitBounds(leafletBounds.pad(0.2), { maxZoom: radiusKm <= 5 ? 14 : 11 });
+    map.fitBounds(leafletBounds.pad(0.2), { animate: false, maxZoom: radiusKm <= 5 ? 14 : 11 });
     requestAnimationFrame(() => map.invalidateSize());
   }
 
   function focusMap(center, radiusKm) {
     ensureMap();
+    suppressMapPromptBriefly();
     clearMap();
     if (!map) return;
     L.circleMarker([center.lat, center.lon], {
@@ -448,7 +479,7 @@
       fillOpacity: 0.92,
       weight: 2,
     }).addTo(centerLayer);
-    map.setView([center.lat, center.lon], radiusKm <= 10 ? 11 : 8);
+    map.setView([center.lat, center.lon], radiusKm <= 10 ? 11 : 8, { animate: false });
     dom.mapEmpty.hidden = false;
     requestAnimationFrame(() => map.invalidateSize());
   }
@@ -515,6 +546,7 @@
     lastLocations = [];
     visibleCount = PAGE_SIZE;
     fastestLocationId = null;
+    hideSearchAreaButton();
     if (!keepInput) dom.input.value = "";
     dom.radius.value = String(DEFAULT_RADIUS_KM);
     hideSuggestions();
@@ -522,7 +554,8 @@
     setStatus(INITIAL_STATUS, "neutral");
     updateRadiusHelp();
     if (map) {
-      map.setView([INITIAL_CENTER.lat, INITIAL_CENTER.lon], 5);
+      suppressMapPromptBriefly();
+      map.setView([INITIAL_CENTER.lat, INITIAL_CENTER.lon], 5, { animate: false });
       requestAnimationFrame(() => map.invalidateSize());
     }
   }
@@ -644,7 +677,20 @@
     dom.form.querySelectorAll("button, input, select").forEach((control) => {
       control.disabled = control === dom.reset ? false : isLoading;
     });
+    if (dom.searchArea) dom.searchArea.disabled = isLoading;
     if (message) setStatus(message, "loading");
+  }
+
+  function showSearchAreaButton() {
+    if (!dom.searchArea || !map) return;
+    dom.searchArea.hidden = false;
+    dom.searchArea.disabled = dom.form?.classList.contains("is-loading");
+  }
+
+  function hideSearchAreaButton() {
+    if (!dom.searchArea) return;
+    dom.searchArea.hidden = true;
+    dom.searchArea.disabled = false;
   }
 
   function setStatus(message, tone = "neutral") {
