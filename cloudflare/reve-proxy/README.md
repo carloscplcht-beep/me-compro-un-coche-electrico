@@ -8,7 +8,7 @@ Documentación oficial consultada: https://www.mapareve.es/docs/api/external/v1
 
 La API externa documenta base URL `https://www.mapareve.es/api/external/v1` y autenticación con header `x-api-key`.
 
-- `GET /locations`: lista Locations. Permite `date_from`, `party_id`, `cpo_id`, `only_dynamic_info`, `page`, `limit`.
+- `GET /locations`: lista Locations. Permite `date_from`, `party_id`, `cpo_id`, `only_dynamic_info`, `page`, `limit`. La respuesta documentada es un array: no incluye `total`, cursor ni enlaces `next/prev`.
 - `GET /locations/{location_id}`: detalle de una Location.
 - `GET /evses/{evse_id}`: detalle de un punto EVSE.
 - `GET /evses/{evse_id}/status`: estado dinámico de un EVSE.
@@ -16,7 +16,7 @@ La API externa documenta base URL `https://www.mapareve.es/api/external/v1` y au
 - `GET /connectors/tariffs`: tarifas dinámicas de conectores.
 - `GET /cpos` y `GET /cpos/{party_id}`: operadores de carga.
 
-La documentación no expone un endpoint nativo de búsqueda por coordenadas/radio. Por eso este proxy añade `GET /locations/nearby`, que consulta páginas de `/locations` y filtra por distancia usando Haversine. Es útil para una primera fase, pero no debe tratarse como búsqueda global exhaustiva si no se recorren suficientes páginas.
+La documentación no expone un endpoint nativo de búsqueda por coordenadas/radio ni filtros por municipio, provincia o bounding box. Por eso este proxy añade `GET /locations/nearby`, que consulta páginas de `/locations` y filtra por distancia usando Haversine. Es útil para una primera fase, pero no debe tratarse como búsqueda global exhaustiva si no se recorre todo el dataset externo.
 
 ## Endpoints del proxy
 
@@ -29,7 +29,7 @@ https://TU_WORKER.workers.dev
 Rutas:
 
 - `GET /health`
-- `GET /locations/nearby?lat=40.4168&lon=-3.7038&radius_km=10&page=1&limit=100&max_pages=1`
+- `GET /locations/nearby?lat=40.4168&lon=-3.7038&radius_km=10&page=1&limit=100&max_pages=5`
 - `GET /locations/{location_id}`
 - `GET /evses/{evse_id}`
 - `GET /evses/{evse_id}/status`
@@ -45,7 +45,7 @@ Parámetros principales:
 - `radius_km`: radio entre `0.1` y `250`.
 - `page`: entero desde `1`.
 - `limit`: entero entre `1` y `100`.
-- `max_pages`: entero entre `1` y `5`. Cada página puede consumir una petición upstream si no está cacheada.
+- `max_pages`: entero entre `1` y `5`. Cada página puede consumir una petición upstream si no está cacheada. El frontend usa `5` para mejorar cobertura sin superar la ventana segura de cuota.
 - `date_from`: fecha ISO 8601.
 - `only_dynamic_info`: `true` o `false`.
 
@@ -125,10 +125,10 @@ Healthcheck:
 curl.exe "http://localhost:8787/health"
 ```
 
-Búsqueda por radio sobre la primera página de Locations:
+Búsqueda por radio sobre una ventana paginada de Locations:
 
 ```powershell
-curl.exe "http://localhost:8787/locations/nearby?lat=40.4168&lon=-3.7038&radius_km=20&page=1&limit=100&max_pages=1"
+curl.exe "http://localhost:8787/locations/nearby?lat=40.4168&lon=-3.7038&radius_km=20&page=1&limit=100&max_pages=5"
 ```
 
 Detalle de Location:

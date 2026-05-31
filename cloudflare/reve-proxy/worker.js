@@ -3,7 +3,7 @@ const PRODUCTION_ORIGIN = "https://carloscplcht-beep.github.io";
 const LOCALHOST_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
 
 const CACHE_TTL_SECONDS = {
-  nearby: 30 * 60,
+  nearby: 6 * 60 * 60,
   location: 60 * 60,
   evse: 15 * 60,
   status: 5 * 60,
@@ -158,6 +158,10 @@ async function handleNearbyLocations(url, request, env, ctx) {
 
   const locations = [];
   const pagesFetched = [];
+  let recordsChecked = 0;
+  let recordsWithCoordinates = 0;
+  let recordsWithoutCoordinates = 0;
+  let stoppedBecauseLastPage = false;
 
   for (let offset = 0; offset < maxPages; offset += 1) {
     const currentPage = page + offset;
@@ -165,15 +169,25 @@ async function handleNearbyLocations(url, request, env, ctx) {
     const upstreamData = await fetchReveJson("/locations", upstreamParams, request, env, ctx, CACHE_TTL_SECONDS.nearby);
     const pageItems = Array.isArray(upstreamData) ? upstreamData : [];
     pagesFetched.push({ page: currentPage, count: pageItems.length });
+    recordsChecked += pageItems.length;
 
     for (const location of pageItems) {
       const point = getLocationPoint(location);
-      if (!point) continue;
+      if (!point) {
+        recordsWithoutCoordinates += 1;
+        continue;
+      }
+      recordsWithCoordinates += 1;
 
       const distanceKm = haversineKm(lat, lon, point.lat, point.lon);
       if (distanceKm <= radiusKm) {
         locations.push({ ...location, distance_km: round(distanceKm, 3) });
       }
+    }
+
+    if (pageItems.length < limit) {
+      stoppedBecauseLastPage = true;
+      break;
     }
   }
 
@@ -191,8 +205,19 @@ async function handleNearbyLocations(url, request, env, ctx) {
         max_pages: maxPages,
         pages_fetched: pagesFetched,
         result_count: locations.length,
+        diagnostics: {
+          reve_endpoint: "/locations",
+          reve_records_checked: recordsChecked,
+          records_with_coordinates: recordsWithCoordinates,
+          records_without_coordinates: recordsWithoutCoordinates,
+          records_after_distance_filter: locations.length,
+          records_sent_to_frontend: locations.length,
+          pagination_limit_reached: !stoppedBecauseLastPage && pagesFetched.length === maxPages,
+          stopped_because_last_page: stoppedBecauseLastPage,
+          cache_ttl_seconds: CACHE_TTL_SECONDS.nearby,
+        },
         source: "Mapa REVE /locations filtrado por el proxy",
-        note: "La API externa no expone búsqueda nativa por radio; el proxy filtra las páginas solicitadas de /locations.",
+        note: "La API externa no expone búsqueda nativa por radio ni total de resultados; el proxy filtra las páginas solicitadas de /locations.",
       },
     },
     200,

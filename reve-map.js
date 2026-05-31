@@ -335,7 +335,19 @@
 
     renderMapPoints(locations, center, radiusKm);
     renderLocationCards(locations);
-    setStatus(`Se han encontrado ${locations.length} puntos en un radio de ${radiusKm} km alrededor de ${center.label}.`, "success");
+    logSafeDiagnostics("resultado", {
+      localidad: center.label,
+      coordenadas: { lat: center.lat, lon: center.lon },
+      radio_km: radiusKm,
+      reve_registros_revisados: meta?.diagnostics?.reve_records_checked,
+      paginas_revisadas: meta?.pages_fetched?.length,
+      tras_filtro_distancia: locations.length,
+      enviados_frontend: locations.length,
+      pintados_mapa: locations.length,
+      mostrados_lista: Math.min(visibleCount, locations.length),
+    });
+
+    setStatus(`Se han encontrado ${locations.length} resultados disponibles en esta consulta para un radio de ${radiusKm} km alrededor de ${center.label}.`, "success");
 
     if (radiusKm === 100) {
       dom.status.textContent += " Radio amplio: util para valorar rutas y desplazamientos cercanos, no solo carga cotidiana.";
@@ -378,7 +390,7 @@
     }).bindPopup(`<strong>${escapeHtml(center.label)}</strong><br>Centro de busqueda`).addTo(centerLayer);
     bounds.push([center.lat, center.lon]);
 
-    locations.slice(0, 80).forEach((location, index) => {
+    locations.forEach((location, index) => {
       const point = getLocationPoint(location);
       if (!point) return;
       const power = getMaxPowerWatts([location]);
@@ -550,8 +562,13 @@
   }
 
   function getMaxPagesForRadius(radiusKm) {
-    // Mapa REVE aplica una cuota estricta; una pagina cacheable evita agotar la API en cada busqueda.
-    return 1;
+    // La API externa solo pagina /locations; 5 paginas es el maximo seguro por la cuota documentada.
+    return 5;
+  }
+
+  function logSafeDiagnostics(event, data) {
+    if (!window.REVE_DEBUG) return;
+    console.info("[REVE diagnostico]", { event, ...data });
   }
 
   function getFastestLocation(locations) {
