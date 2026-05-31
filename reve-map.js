@@ -353,7 +353,7 @@
     if (radiusKm === 100) {
       dom.status.textContent += " Radio amplio: util para valorar rutas y desplazamientos cercanos, no solo carga cotidiana.";
     }
-    if (meta?.note) {
+    if (meta?.note && meta.note !== meta?.dataLimitationMessage) {
       dom.status.textContent += ` ${meta.note}`;
     }
   }
