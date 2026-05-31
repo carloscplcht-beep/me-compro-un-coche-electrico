@@ -12,6 +12,17 @@ const CACHE_TTL_SECONDS = {
   cpos: 60 * 60,
 };
 
+const DATASET_CACHE = {
+  metaKey: "locations:v2:meta",
+  pageKeyPrefix: "locations:v2:page:",
+  lockKey: "locations:v2:refresh-lock",
+  limit: 100,
+  maxPages: 50,
+  batchPages: 5,
+  staleAfterMs: 12 * 60 * 60 * 1000,
+  lockTtlSeconds: 10 * 60,
+};
+
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
 const PARTY_ID_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 
@@ -20,10 +31,7 @@ export default {
     try {
       return await handleRequest(request, env, ctx);
     } catch (error) {
-      if (error instanceof PublicError) {
-        return safeJson(error, error.status, request);
-      }
-
+      if (error instanceof PublicError) return safeJson(error, error.status, request);
       return safeJson(
         { error: { code: "internal_error", message: "No se ha podido procesar la solicitud." } },
         500,
@@ -31,12 +39,15 @@ export default {
       );
     }
   },
+
+  async scheduled(event, env, ctx) {
+    if (!env.MAPA_REVE_API_KEY || !env.REVE_DATASET) return;
+    ctx.waitUntil(refreshDatasetBatch(env, ctx, new Request("https://internal.worker/scheduled-refresh"), { force: true }));
+  },
 };
 
 async function handleRequest(request, env, ctx) {
-  if (request.method === "OPTIONS") {
-    return handlePreflight(request);
-  }
+  if (request.method === "OPTIONS") return handlePreflight(request);
 
   if (request.method !== "GET") {
     return safeJson(
@@ -70,6 +81,11 @@ async function handleRequest(request, env, ctx) {
   if (route === "/health") {
     rejectUnknownParams(url, []);
     return safeJson({ ok: true, service: "mapa-reve-proxy" }, 200, request);
+  }
+
+  if (route === "/dataset/status") {
+    rejectUnknownParams(url, []);
+    return handleDatasetStatus(request, env);
   }
 
   if (route === "/locations/nearby") {
@@ -134,11 +150,7 @@ async function handleRequest(request, env, ctx) {
     return proxyReveJson(`/cpos/${encodeURIComponent(partyId)}`, {}, request, env, ctx, CACHE_TTL_SECONDS.cpos);
   }
 
-  return safeJson(
-    { error: { code: "not_found", message: "Ruta no disponible en este proxy." } },
-    404,
-    request,
-  );
+  return safeJson({ error: { code: "not_found", message: "Ruta no disponible en este proxy." } }, 404, request);
 }
 
 async function handleNearbyLocations(url, request, env, ctx) {
@@ -149,13 +161,234 @@ async function handleNearbyLocations(url, request, env, ctx) {
   const limit = parseInteger(url.searchParams.get("limit"), "limit", { min: 1, max: 100, defaultValue: 100 });
   const maxPages = parseInteger(url.searchParams.get("max_pages"), "max_pages", { min: 1, max: 5, defaultValue: 1 });
 
+  const canUseDataset =
+    env.REVE_DATASET &&
+    !url.searchParams.has("date_from") &&
+    !url.searchParams.has("party_id") &&
+    !url.searchParams.has("cpo_id") &&
+    !url.searchParams.has("only_dynamic_info");
+
+  if (canUseDataset) {
+    return handleNearbyLocationsFromDataset({ lat, lon, radiusKm, page }, request, env, ctx);
+  }
+
   const sharedParams = pickListParams(url, {
     allowDateFrom: true,
     allowParty: true,
     allowCpo: true,
     allowDynamicOnly: true,
   });
+  const scanned = await scanLocationsWindow({ lat, lon, radiusKm, page, limit, maxPages }, sharedParams, request, env, ctx);
 
+  return safeJson(
+    buildNearbyPayload(scanned.locations, {
+      lat,
+      lon,
+      radiusKm,
+      page,
+      limit,
+      maxPages,
+      pagesFetched: scanned.pagesFetched,
+      recordsChecked: scanned.recordsChecked,
+      recordsWithCoordinates: scanned.recordsWithCoordinates,
+      recordsWithoutCoordinates: scanned.recordsWithoutCoordinates,
+      stoppedBecauseLastPage: scanned.stoppedBecauseLastPage,
+      cacheStatus: "bypass",
+      datasetComplete: false,
+      lastDatasetRefresh: null,
+      dataLimitationMessage: "La API externa no permite busqueda geografica directa; esta respuesta usa una ventana paginada limitada.",
+    }),
+    200,
+    request,
+    { "Cache-Control": `public, max-age=${CACHE_TTL_SECONDS.nearby}` },
+  );
+}
+
+async function handleNearbyLocationsFromDataset(options, request, env, ctx) {
+  const dataset = await getLocationsDataset(env, ctx, request);
+  const locations = filterLocationsByDistance(dataset.locations, options.lat, options.lon, options.radiusKm);
+
+  if (dataset.shouldRefresh) {
+    ctx.waitUntil(refreshDatasetBatch(env, ctx, request, { force: false }));
+  }
+
+  return safeJson(
+    buildNearbyPayload(locations, {
+      lat: options.lat,
+      lon: options.lon,
+      radiusKm: options.radiusKm,
+      page: options.page,
+      limit: DATASET_CACHE.limit,
+      maxPages: dataset.meta.pagesCached || 0,
+      pagesFetched: dataset.pagesFetched,
+      recordsChecked: dataset.recordsFetched,
+      recordsWithCoordinates: dataset.recordsWithCoordinates,
+      recordsWithoutCoordinates: dataset.recordsWithoutCoordinates,
+      stoppedBecauseLastPage: Boolean(dataset.meta.complete),
+      cacheStatus: dataset.cacheStatus,
+      datasetComplete: dataset.meta.complete ? true : false,
+      lastDatasetRefresh: dataset.meta.lastRefresh || null,
+      dataLimitationMessage: dataset.meta.complete
+        ? null
+        : "La API externa no permite busqueda geografica directa. Los resultados se calculan sobre los datos disponibles consultados y pueden no coincidir exactamente con el mapa oficial.",
+    }),
+    200,
+    request,
+    { "Cache-Control": `public, max-age=${CACHE_TTL_SECONDS.nearby}` },
+  );
+}
+
+async function getLocationsDataset(env, ctx, request) {
+  const rawMeta = await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json");
+  let meta = normalizeDatasetMeta(rawMeta);
+
+  if (!meta.pagesCached) {
+    meta = await refreshDatasetBatch(env, ctx, request, { force: true, meta });
+  }
+
+  const isStale = !meta.lastRefresh || Date.now() - Date.parse(meta.lastRefresh) > DATASET_CACHE.staleAfterMs;
+  const shouldRefresh = !meta.complete || isStale;
+  const pages = await readDatasetPages(env, meta.pagesCached);
+
+  const locations = [];
+  const pagesFetched = [];
+  let recordsWithCoordinates = 0;
+  let recordsWithoutCoordinates = 0;
+
+  pages.forEach((items, index) => {
+    pagesFetched.push({ page: index + 1, count: items.length, source: "kv" });
+    items.forEach((location) => {
+      const point = getLocationPoint(location);
+      if (point) recordsWithCoordinates += 1;
+      else recordsWithoutCoordinates += 1;
+      locations.push(location);
+    });
+  });
+
+  return {
+    locations,
+    meta,
+    pagesFetched,
+    recordsFetched: locations.length,
+    recordsWithCoordinates,
+    recordsWithoutCoordinates,
+    cacheStatus: rawMeta ? (isStale ? "stale" : "hit") : "miss",
+    shouldRefresh,
+  };
+}
+
+async function refreshDatasetBatch(env, ctx, request, options = {}) {
+  const lockValue = await env.REVE_DATASET.get(DATASET_CACHE.lockKey);
+  if (lockValue && !options.force) {
+    return normalizeDatasetMeta(await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json"));
+  }
+
+  await env.REVE_DATASET.put(DATASET_CACHE.lockKey, new Date().toISOString(), { expirationTtl: DATASET_CACHE.lockTtlSeconds });
+  try {
+    let meta = normalizeDatasetMeta(options.meta || await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json"));
+    const startPage = meta.complete ? 1 : meta.nextPage || meta.pagesCached + 1 || 1;
+    const endPage = Math.min(startPage + DATASET_CACHE.batchPages - 1, DATASET_CACHE.maxPages);
+    let pagesCached = meta.complete ? 0 : meta.pagesCached;
+    let recordsFetched = meta.complete ? 0 : meta.recordsFetched;
+    let complete = false;
+
+    for (let page = startPage; page <= endPage; page += 1) {
+      const upstreamData = await fetchReveJson(
+        "/locations",
+        { page: String(page), limit: String(DATASET_CACHE.limit) },
+        request,
+        env,
+        ctx,
+        CACHE_TTL_SECONDS.nearby,
+      );
+      const pageItems = Array.isArray(upstreamData) ? upstreamData : [];
+      await env.REVE_DATASET.put(`${DATASET_CACHE.pageKeyPrefix}${page}`, JSON.stringify(pageItems));
+      pagesCached = Math.max(pagesCached, page);
+      recordsFetched += pageItems.length;
+
+      if (pageItems.length < DATASET_CACHE.limit) {
+        complete = true;
+        break;
+      }
+    }
+
+    const newMeta = {
+      version: 2,
+      limit: DATASET_CACHE.limit,
+      maxPages: DATASET_CACHE.maxPages,
+      batchPages: DATASET_CACHE.batchPages,
+      pagesCached,
+      recordsFetched,
+      complete,
+      reachedConfiguredLimit: pagesCached >= DATASET_CACHE.maxPages && !complete,
+      nextPage: pagesCached + 1,
+      lastRefresh: new Date().toISOString(),
+      lastError: null,
+    };
+    await env.REVE_DATASET.put(DATASET_CACHE.metaKey, JSON.stringify(newMeta));
+    return newMeta;
+  } catch (error) {
+    const meta = normalizeDatasetMeta(await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json"));
+    const failedMeta = {
+      ...meta,
+      lastError: error instanceof PublicError ? error.code : "refresh_failed",
+      lastFailedRefresh: new Date().toISOString(),
+    };
+    await env.REVE_DATASET.put(DATASET_CACHE.metaKey, JSON.stringify(failedMeta));
+    return failedMeta;
+  } finally {
+    await env.REVE_DATASET.delete(DATASET_CACHE.lockKey);
+  }
+}
+
+async function readDatasetPages(env, pagesCached) {
+  const pages = [];
+  for (let page = 1; page <= pagesCached; page += 1) {
+    const items = await env.REVE_DATASET.get(`${DATASET_CACHE.pageKeyPrefix}${page}`, "json");
+    pages.push(Array.isArray(items) ? items : []);
+  }
+  return pages;
+}
+
+function normalizeDatasetMeta(meta) {
+  if (!meta || typeof meta !== "object") {
+    return {
+      version: 2,
+      limit: DATASET_CACHE.limit,
+      maxPages: DATASET_CACHE.maxPages,
+      batchPages: DATASET_CACHE.batchPages,
+      pagesCached: 0,
+      recordsFetched: 0,
+      complete: false,
+      reachedConfiguredLimit: false,
+      nextPage: 1,
+      lastRefresh: null,
+    };
+  }
+  return {
+    ...meta,
+    pagesCached: Number(meta.pagesCached) || 0,
+    recordsFetched: Number(meta.recordsFetched) || 0,
+    nextPage: Number(meta.nextPage) || (Number(meta.pagesCached) || 0) + 1,
+    complete: meta.complete === true,
+  };
+}
+
+async function handleDatasetStatus(request, env) {
+  const meta = env.REVE_DATASET ? normalizeDatasetMeta(await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json")) : null;
+  return safeJson(
+    {
+      ok: true,
+      kvAvailable: Boolean(env.REVE_DATASET),
+      meta,
+      strategy: "KV progressive cache over /locations pages; searches filter cached dataset by distance.",
+    },
+    200,
+    request,
+  );
+}
+
+async function scanLocationsWindow({ lat, lon, radiusKm, page, limit, maxPages }, sharedParams, request, env, ctx) {
   const locations = [];
   const pagesFetched = [];
   let recordsChecked = 0;
@@ -168,7 +401,7 @@ async function handleNearbyLocations(url, request, env, ctx) {
     const upstreamParams = { ...sharedParams, page: String(currentPage), limit: String(limit) };
     const upstreamData = await fetchReveJson("/locations", upstreamParams, request, env, ctx, CACHE_TTL_SECONDS.nearby);
     const pageItems = Array.isArray(upstreamData) ? upstreamData : [];
-    pagesFetched.push({ page: currentPage, count: pageItems.length });
+    pagesFetched.push({ page: currentPage, count: pageItems.length, source: "upstream_or_cache" });
     recordsChecked += pageItems.length;
 
     for (const location of pageItems) {
@@ -178,11 +411,8 @@ async function handleNearbyLocations(url, request, env, ctx) {
         continue;
       }
       recordsWithCoordinates += 1;
-
       const distanceKm = haversineKm(lat, lon, point.lat, point.lon);
-      if (distanceKm <= radiusKm) {
-        locations.push({ ...location, distance_km: round(distanceKm, 3) });
-      }
+      if (distanceKm <= radiusKm) locations.push({ ...location, distance_km: round(distanceKm, 3) });
     }
 
     if (pageItems.length < limit) {
@@ -192,38 +422,62 @@ async function handleNearbyLocations(url, request, env, ctx) {
   }
 
   locations.sort((a, b) => a.distance_km - b.distance_km);
+  return { locations, pagesFetched, recordsChecked, recordsWithCoordinates, recordsWithoutCoordinates, stoppedBecauseLastPage };
+}
 
-  return safeJson(
-    {
-      data: locations,
-      meta: {
-        lat,
-        lon,
-        radius_km: radiusKm,
-        page,
-        limit,
-        max_pages: maxPages,
-        pages_fetched: pagesFetched,
-        result_count: locations.length,
-        diagnostics: {
-          reve_endpoint: "/locations",
-          reve_records_checked: recordsChecked,
-          records_with_coordinates: recordsWithCoordinates,
-          records_without_coordinates: recordsWithoutCoordinates,
-          records_after_distance_filter: locations.length,
-          records_sent_to_frontend: locations.length,
-          pagination_limit_reached: !stoppedBecauseLastPage && pagesFetched.length === maxPages,
-          stopped_because_last_page: stoppedBecauseLastPage,
-          cache_ttl_seconds: CACHE_TTL_SECONDS.nearby,
-        },
-        source: "Mapa REVE /locations filtrado por el proxy",
-        note: "La API externa no expone búsqueda nativa por radio ni total de resultados; el proxy filtra las páginas solicitadas de /locations.",
+function filterLocationsByDistance(locations, lat, lon, radiusKm) {
+  return locations
+    .map((location) => {
+      const point = getLocationPoint(location);
+      if (!point) return null;
+      const distanceKm = haversineKm(lat, lon, point.lat, point.lon);
+      if (distanceKm > radiusKm) return null;
+      return { ...location, distance_km: round(distanceKm, 3) };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distance_km - b.distance_km);
+}
+
+function buildNearbyPayload(locations, options) {
+  const datasetComplete = options.datasetComplete === true;
+  const limitation = options.dataLimitationMessage || null;
+  return {
+    data: locations,
+    meta: {
+      lat: options.lat,
+      lon: options.lon,
+      radius_km: options.radiusKm,
+      page: options.page,
+      limit: options.limit,
+      max_pages: options.maxPages,
+      pages_fetched: options.pagesFetched,
+      pagesFetched: options.pagesFetched,
+      recordsFetched: options.recordsChecked,
+      datasetComplete,
+      cacheStatus: options.cacheStatus,
+      lastDatasetRefresh: options.lastDatasetRefresh,
+      resultsAfterDistanceFilter: locations.length,
+      resultsReturnedToFrontend: locations.length,
+      dataLimitationMessage: limitation,
+      result_count: locations.length,
+      diagnostics: {
+        reve_endpoint: "/locations",
+        reve_records_checked: options.recordsChecked,
+        records_with_coordinates: options.recordsWithCoordinates,
+        records_without_coordinates: options.recordsWithoutCoordinates,
+        records_after_distance_filter: locations.length,
+        records_sent_to_frontend: locations.length,
+        pagination_limit_reached: !options.stoppedBecauseLastPage,
+        stopped_because_last_page: options.stoppedBecauseLastPage,
+        cache_ttl_seconds: CACHE_TTL_SECONDS.nearby,
+        dataset_complete: datasetComplete,
+        cache_status: options.cacheStatus,
+        last_dataset_refresh: options.lastDatasetRefresh,
       },
+      source: "Mapa REVE /locations filtrado por el proxy",
+      note: limitation || "Dataset de /locations consultado desde cache compartida del Worker.",
     },
-    200,
-    request,
-    { "Cache-Control": `public, max-age=${CACHE_TTL_SECONDS.nearby}` },
-  );
+  };
 }
 
 async function proxyReveJson(path, params, request, env, ctx, ttlSeconds) {
@@ -234,9 +488,7 @@ async function proxyReveJson(path, params, request, env, ctx, ttlSeconds) {
 async function fetchReveJson(path, params, request, env, ctx, ttlSeconds) {
   const upstreamUrl = new URL(`${REVE_BASE_URL}${path}`);
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") {
-      upstreamUrl.searchParams.set(key, value);
-    }
+    if (value !== undefined && value !== null && value !== "") upstreamUrl.searchParams.set(key, value);
   }
 
   const cacheKey = new Request(upstreamUrl.toString(), { method: "GET" });
@@ -255,8 +507,8 @@ async function fetchReveJson(path, params, request, env, ctx, ttlSeconds) {
     throw new PublicError(
       "upstream_error",
       upstreamResponse.status === 429
-        ? "Mapa REVE ha indicado límite de solicitudes. Inténtalo más tarde."
-        : "Mapa REVE no ha devuelto una respuesta válida.",
+        ? "Mapa REVE ha indicado limite de solicitudes. Intentalo mas tarde."
+        : "Mapa REVE no ha devuelto una respuesta valida.",
       upstreamResponse.status,
     );
   }
@@ -286,28 +538,17 @@ function pickListParams(url, options = {}) {
     limit: String(parseInteger(url.searchParams.get("limit"), "limit", { min: 1, max: 100, defaultValue: 100 })),
   };
 
-  if (options.allowDateFrom && url.searchParams.has("date_from")) {
-    params.date_from = validateDateFrom(url.searchParams.get("date_from"));
-  }
-  if (options.allowParty && url.searchParams.has("party_id")) {
-    params.party_id = validatePartyId(url.searchParams.get("party_id"));
-  }
-  if (options.allowCpo && url.searchParams.has("cpo_id")) {
-    params.cpo_id = validateId(url.searchParams.get("cpo_id"), "cpo_id");
-  }
-  if (options.allowDynamicOnly && url.searchParams.has("only_dynamic_info")) {
-    params.only_dynamic_info = validateBoolean(url.searchParams.get("only_dynamic_info"), "only_dynamic_info");
-  }
-
+  if (options.allowDateFrom && url.searchParams.has("date_from")) params.date_from = validateDateFrom(url.searchParams.get("date_from"));
+  if (options.allowParty && url.searchParams.has("party_id")) params.party_id = validatePartyId(url.searchParams.get("party_id"));
+  if (options.allowCpo && url.searchParams.has("cpo_id")) params.cpo_id = validateId(url.searchParams.get("cpo_id"), "cpo_id");
+  if (options.allowDynamicOnly && url.searchParams.has("only_dynamic_info")) params.only_dynamic_info = validateBoolean(url.searchParams.get("only_dynamic_info"), "only_dynamic_info");
   return params;
 }
 
 function rejectUnknownParams(url, allowedParams) {
   const allowed = new Set(allowedParams);
   for (const key of url.searchParams.keys()) {
-    if (!allowed.has(key)) {
-      throw new PublicError("invalid_parameter", `El parámetro ${key} no está permitido en esta ruta.`, 400);
-    }
+    if (!allowed.has(key)) throw new PublicError("invalid_parameter", `El parametro ${key} no esta permitido en esta ruta.`, 400);
   }
 }
 
@@ -317,56 +558,46 @@ function parseCoordinate(value, min, max, name) {
 
 function parseNumber(value, name, { min, max, defaultValue, required = false }) {
   if ((value === null || value === "") && !required) return defaultValue;
-  if (value === null || value === "") throw new PublicError("invalid_parameter", `Falta el parámetro ${name}.`, 400);
+  if (value === null || value === "") throw new PublicError("invalid_parameter", `Falta el parametro ${name}.`, 400);
 
   const normalized = String(value).trim().replace(",", ".");
-  if (!/^-?\d+(\.\d+)?$/.test(normalized)) {
-    throw new PublicError("invalid_parameter", `El parámetro ${name} debe ser numérico.`, 400);
-  }
+  if (!/^-?\d+(\.\d+)?$/.test(normalized)) throw new PublicError("invalid_parameter", `El parametro ${name} debe ser numerico.`, 400);
 
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    throw new PublicError("invalid_parameter", `El parámetro ${name} debe estar entre ${min} y ${max}.`, 400);
+    throw new PublicError("invalid_parameter", `El parametro ${name} debe estar entre ${min} y ${max}.`, 400);
   }
   return parsed;
 }
 
 function parseInteger(value, name, { min, max, defaultValue }) {
   if (value === null || value === "") return defaultValue;
-  if (!/^\d+$/.test(String(value))) {
-    throw new PublicError("invalid_parameter", `El parámetro ${name} debe ser un entero positivo.`, 400);
-  }
+  if (!/^\d+$/.test(String(value))) throw new PublicError("invalid_parameter", `El parametro ${name} debe ser un entero positivo.`, 400);
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    throw new PublicError("invalid_parameter", `El parámetro ${name} debe estar entre ${min} y ${max}.`, 400);
+    throw new PublicError("invalid_parameter", `El parametro ${name} debe estar entre ${min} y ${max}.`, 400);
   }
   return parsed;
 }
 
 function validateId(value, name) {
-  if (!value || !ID_PATTERN.test(value)) {
-    throw new PublicError("invalid_parameter", `El parámetro ${name} no tiene un formato válido.`, 400);
-  }
+  if (!value || !ID_PATTERN.test(value)) throw new PublicError("invalid_parameter", `El parametro ${name} no tiene un formato valido.`, 400);
   return value;
 }
 
 function validatePartyId(value) {
-  if (!value || !PARTY_ID_PATTERN.test(value)) {
-    throw new PublicError("invalid_parameter", "El parámetro party_id no tiene un formato válido.", 400);
-  }
+  if (!value || !PARTY_ID_PATTERN.test(value)) throw new PublicError("invalid_parameter", "El parametro party_id no tiene un formato valido.", 400);
   return value;
 }
 
 function validateDateFrom(value) {
-  if (!value || Number.isNaN(Date.parse(value))) {
-    throw new PublicError("invalid_parameter", "El parámetro date_from debe ser una fecha ISO 8601 válida.", 400);
-  }
+  if (!value || Number.isNaN(Date.parse(value))) throw new PublicError("invalid_parameter", "El parametro date_from debe ser una fecha ISO 8601 valida.", 400);
   return value;
 }
 
 function validateBoolean(value, name) {
   if (value === "true" || value === "false") return value;
-  throw new PublicError("invalid_parameter", `El parámetro ${name} debe ser true o false.`, 400);
+  throw new PublicError("invalid_parameter", `El parametro ${name} debe ser true o false.`, 400);
 }
 
 function getLocationPoint(location) {
@@ -406,11 +637,7 @@ function validateOrigin(request) {
 function handlePreflight(request) {
   const originCheck = validateOrigin(request);
   if (!originCheck.ok) {
-    return safeJson(
-      { error: { code: "cors_forbidden", message: "Origen no autorizado para consultar el proxy." } },
-      403,
-      request,
-    );
+    return safeJson({ error: { code: "cors_forbidden", message: "Origen no autorizado para consultar el proxy." } }, 403, request);
   }
 
   return new Response(null, {
@@ -425,10 +652,7 @@ function handlePreflight(request) {
 }
 
 function safeJson(body, status, request, extraHeaders = {}) {
-  const payload =
-    body instanceof PublicError
-      ? { error: { code: body.code, message: body.publicMessage } }
-      : body;
+  const payload = body instanceof PublicError ? { error: { code: body.code, message: body.publicMessage } } : body;
 
   return new Response(JSON.stringify(payload), {
     status,
@@ -443,9 +667,7 @@ function safeJson(body, status, request, extraHeaders = {}) {
 function corsHeaders(request, extraHeaders = {}) {
   const originCheck = validateOrigin(request);
   const headers = { ...extraHeaders, Vary: "Origin" };
-  if (originCheck.ok && originCheck.origin) {
-    headers["Access-Control-Allow-Origin"] = originCheck.origin;
-  }
+  if (originCheck.ok && originCheck.origin) headers["Access-Control-Allow-Origin"] = originCheck.origin;
   return headers;
 }
 

@@ -301,8 +301,8 @@
       dom.coverage.textContent = "Baja";
       dom.coverage.dataset.tone = "low";
       dom.coverageCopy.textContent = "pocos puntos disponibles en el radio seleccionado";
-      dom.updated.textContent = `Ultima consulta: ${formatDateTime(new Date())}`;
-      setStatus(`No se han encontrado puntos en ${radiusKm} km con las paginas consultadas de mapa REVE.`, "empty");
+      dom.updated.textContent = getDatasetUpdatedText(meta);
+      setStatus(`No se han encontrado puntos en esta consulta para ${radiusKm} km alrededor de ${center.label}. ${getDataLimitationCopy(meta)}`, "empty");
       return;
     }
 
@@ -329,9 +329,7 @@
     dom.coverage.textContent = coverage.label;
     dom.coverage.dataset.tone = coverage.tone;
     dom.coverageCopy.textContent = coverage.copy;
-    dom.updated.textContent = latestUpdated
-      ? `Ultima actualizacion API: ${formatDateTime(latestUpdated)}`
-      : `Ultima consulta: ${formatDateTime(new Date())}`;
+    dom.updated.textContent = getDatasetUpdatedText(meta, latestUpdated);
 
     renderMapPoints(locations, center, radiusKm);
     renderLocationCards(locations);
@@ -340,6 +338,9 @@
       coordenadas: { lat: center.lat, lon: center.lon },
       radio_km: radiusKm,
       reve_registros_revisados: meta?.diagnostics?.reve_records_checked,
+      cache_estado: meta?.cacheStatus,
+      dataset_completo: meta?.datasetComplete,
+      ultima_actualizacion_dataset: meta?.lastDatasetRefresh,
       paginas_revisadas: meta?.pages_fetched?.length,
       tras_filtro_distancia: locations.length,
       enviados_frontend: locations.length,
@@ -347,7 +348,7 @@
       mostrados_lista: Math.min(visibleCount, locations.length),
     });
 
-    setStatus(`Se han encontrado ${locations.length} resultados disponibles en esta consulta para un radio de ${radiusKm} km alrededor de ${center.label}.`, "success");
+    setStatus(`Se han encontrado ${locations.length} resultados disponibles en esta consulta para un radio de ${radiusKm} km alrededor de ${center.label}. ${getDataLimitationCopy(meta)}`, "success");
 
     if (radiusKm === 100) {
       dom.status.textContent += " Radio amplio: util para valorar rutas y desplazamientos cercanos, no solo carga cotidiana.";
@@ -564,6 +565,22 @@
   function getMaxPagesForRadius(radiusKm) {
     // La API externa solo pagina /locations; 5 paginas es el maximo seguro por la cuota documentada.
     return 5;
+  }
+
+  function getDatasetUpdatedText(meta, latestUpdated = null) {
+    if (meta?.lastDatasetRefresh) {
+      return `Datos consultados: ${formatDateTime(new Date(meta.lastDatasetRefresh))}`;
+    }
+    if (latestUpdated) {
+      return `Ultima actualizacion API: ${formatDateTime(latestUpdated)}`;
+    }
+    return `Ultima consulta: ${formatDateTime(new Date())}`;
+  }
+
+  function getDataLimitationCopy(meta) {
+    if (meta?.datasetComplete === true) return "";
+    return meta?.dataLimitationMessage ||
+      "La API externa no permite busqueda geografica directa. Los resultados se calculan sobre los datos disponibles consultados y pueden no coincidir exactamente con el mapa oficial.";
   }
 
   function logSafeDiagnostics(event, data) {

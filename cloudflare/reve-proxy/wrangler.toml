@@ -2,6 +2,13 @@ name = "mapa-reve-proxy"
 main = "worker.js"
 compatibility_date = "2026-05-31"
 
+[[kv_namespaces]]
+binding = "REVE_DATASET"
+id = "ac6519ad57ed4350a926341c4d73e668"
+
+[triggers]
+crons = ["7 * * * *"]
+
 # No pongas MAPA_REVE_API_KEY en este archivo.
 # Configura el secreto de forma interactiva con:
 # npm run secret:mapa-reve

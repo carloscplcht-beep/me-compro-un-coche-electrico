@@ -16,7 +16,17 @@ La API externa documenta base URL `https://www.mapareve.es/api/external/v1` y au
 - `GET /connectors/tariffs`: tarifas dinámicas de conectores.
 - `GET /cpos` y `GET /cpos/{party_id}`: operadores de carga.
 
-La documentación no expone un endpoint nativo de búsqueda por coordenadas/radio ni filtros por municipio, provincia o bounding box. Por eso este proxy añade `GET /locations/nearby`, que consulta páginas de `/locations` y filtra por distancia usando Haversine. Es útil para una primera fase, pero no debe tratarse como búsqueda global exhaustiva si no se recorre todo el dataset externo.
+La documentación no expone un endpoint nativo de búsqueda por coordenadas/radio ni filtros por municipio, provincia o bounding box. Por eso este proxy añade `GET /locations/nearby`, que consulta páginas de `/locations` y filtra por distancia usando Haversine.
+
+Para evitar que cada usuario dispare una descarga masiva, el Worker usa una cache progresiva en Cloudflare KV:
+
+- Guarda páginas de `/locations` en `REVE_DATASET`.
+- Lee todas las páginas ya cacheadas para cada búsqueda por radio.
+- Si la cache está incompleta o antigua, intenta refrescar una tanda de 5 páginas en segundo plano.
+- Un Cron Trigger ejecuta el mismo refresco una vez por hora.
+- La respuesta indica `datasetComplete`, `cacheStatus`, `lastDatasetRefresh`, `recordsFetched`, `resultsAfterDistanceFilter` y `dataLimitationMessage`.
+
+Mientras `datasetComplete` no sea `true`, los resultados deben leerse como resultados disponibles dentro de los datos consultados, no como un reflejo exhaustivo del mapa oficial.
 
 ## Endpoints del proxy
 
@@ -30,6 +40,7 @@ Rutas:
 
 - `GET /health`
 - `GET /locations/nearby?lat=40.4168&lon=-3.7038&radius_km=10&page=1&limit=100&max_pages=5`
+- `GET /dataset/status`
 - `GET /locations/{location_id}`
 - `GET /evses/{evse_id}`
 - `GET /evses/{evse_id}/status`
@@ -125,7 +136,7 @@ Healthcheck:
 curl.exe "http://localhost:8787/health"
 ```
 
-Búsqueda por radio sobre una ventana paginada de Locations:
+Búsqueda por radio usando cache compartida si `REVE_DATASET` está configurado:
 
 ```powershell
 curl.exe "http://localhost:8787/locations/nearby?lat=40.4168&lon=-3.7038&radius_km=20&page=1&limit=100&max_pages=5"
