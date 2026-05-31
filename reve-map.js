@@ -82,7 +82,6 @@
     bindEvents();
     populateDatalist();
     resetRechargeSearch({ keepInput: false });
-    requestAnimationFrame(() => ensureMap());
   });
 
   function city(label, province, region, lat, lon, postalCodes = [], aliases = []) {
@@ -501,7 +500,6 @@
     renderEmptyResults();
     setStatus(INITIAL_STATUS, "neutral");
     updateRadiusHelp();
-    ensureMap();
     if (map) {
       map.setView([INITIAL_CENTER.lat, INITIAL_CENTER.lon], 5);
       requestAnimationFrame(() => map.invalidateSize());
@@ -563,8 +561,8 @@
   }
 
   function getMaxPagesForRadius(radiusKm) {
-    // La API externa solo pagina /locations; 5 paginas es el maximo seguro por la cuota documentada.
-    return 5;
+    // La busqueda publicada usa KV; este limite solo aplica si el proxy necesita una ventana de fallback.
+    return 2;
   }
 
   function getDatasetUpdatedText(meta, latestUpdated = null) {

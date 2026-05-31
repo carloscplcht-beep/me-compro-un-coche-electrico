@@ -16,11 +16,16 @@ const DATASET_CACHE = {
   metaKey: "locations:v2:meta",
   pageKeyPrefix: "locations:v2:page:",
   lockKey: "locations:v2:refresh-lock",
+  rateKey: "locations:v2:hourly-requests",
   limit: 100,
   maxPages: 50,
-  batchPages: 5,
+  defaultBatchPages: 2,
+  minimumBatchPages: 1,
+  hourlyRequestLimit: 5,
   staleAfterMs: 12 * 60 * 60 * 1000,
   lockTtlSeconds: 10 * 60,
+  backoffAfterErrors: 3,
+  backoffMs: 2 * 60 * 60 * 1000,
 };
 
 const ID_PATTERN = /^[A-Za-z0-9._:-]{1,160}$/;
@@ -42,7 +47,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     if (!env.MAPA_REVE_API_KEY || !env.REVE_DATASET) return;
-    ctx.waitUntil(refreshDatasetBatch(env, ctx, new Request("https://internal.worker/scheduled-refresh"), { force: true }));
+    ctx.waitUntil(refreshDatasetBatch(env, ctx, new Request("https://internal.worker/scheduled-refresh"), { source: "scheduled" }));
   },
 };
 
@@ -83,7 +88,7 @@ async function handleRequest(request, env, ctx) {
     return safeJson({ ok: true, service: "mapa-reve-proxy" }, 200, request);
   }
 
-  if (route === "/dataset/status") {
+  if (route === "/dataset/status" || route === "/dataset-status") {
     rejectUnknownParams(url, []);
     return handleDatasetStatus(request, env);
   }
@@ -159,7 +164,7 @@ async function handleNearbyLocations(url, request, env, ctx) {
   const radiusKm = parseNumber(url.searchParams.get("radius_km"), "radius_km", { min: 0.1, max: 250, defaultValue: 10 });
   const page = parseInteger(url.searchParams.get("page"), "page", { min: 1, max: 100000, defaultValue: 1 });
   const limit = parseInteger(url.searchParams.get("limit"), "limit", { min: 1, max: 100, defaultValue: 100 });
-  const maxPages = parseInteger(url.searchParams.get("max_pages"), "max_pages", { min: 1, max: 5, defaultValue: 1 });
+  const maxPages = parseInteger(url.searchParams.get("max_pages"), "max_pages", { min: 1, max: DATASET_CACHE.defaultBatchPages, defaultValue: 1 });
 
   const canUseDataset =
     env.REVE_DATASET &&
@@ -208,10 +213,6 @@ async function handleNearbyLocationsFromDataset(options, request, env, ctx) {
   const dataset = await getLocationsDataset(env, ctx, request);
   const locations = filterLocationsByDistance(dataset.locations, options.lat, options.lon, options.radiusKm);
 
-  if (dataset.shouldRefresh) {
-    ctx.waitUntil(refreshDatasetBatch(env, ctx, request, { force: false }));
-  }
-
   return safeJson(
     buildNearbyPayload(locations, {
       lat: options.lat,
@@ -242,12 +243,7 @@ async function getLocationsDataset(env, ctx, request) {
   const rawMeta = await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json");
   let meta = normalizeDatasetMeta(rawMeta);
 
-  if (!meta.pagesCached) {
-    meta = await refreshDatasetBatch(env, ctx, request, { force: true, meta });
-  }
-
   const isStale = !meta.lastRefresh || Date.now() - Date.parse(meta.lastRefresh) > DATASET_CACHE.staleAfterMs;
-  const shouldRefresh = !meta.complete || isStale;
   const pages = await readDatasetPages(env, meta.pagesCached);
 
   const locations = [];
@@ -273,26 +269,41 @@ async function getLocationsDataset(env, ctx, request) {
     recordsWithCoordinates,
     recordsWithoutCoordinates,
     cacheStatus: rawMeta ? (isStale ? "stale" : "hit") : "miss",
-    shouldRefresh,
   };
 }
 
 async function refreshDatasetBatch(env, ctx, request, options = {}) {
   const lockValue = await env.REVE_DATASET.get(DATASET_CACHE.lockKey);
-  if (lockValue && !options.force) {
+  if (lockValue) {
     return normalizeDatasetMeta(await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json"));
   }
 
   await env.REVE_DATASET.put(DATASET_CACHE.lockKey, new Date().toISOString(), { expirationTtl: DATASET_CACHE.lockTtlSeconds });
+  let activeMeta = normalizeDatasetMeta(options.meta || await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json"));
+  let failedPage = activeMeta.nextPage || activeMeta.pagesCached + 1 || 1;
   try {
-    let meta = normalizeDatasetMeta(options.meta || await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json"));
-    const startPage = meta.complete ? 1 : meta.nextPage || meta.pagesCached + 1 || 1;
-    const endPage = Math.min(startPage + DATASET_CACHE.batchPages - 1, DATASET_CACHE.maxPages);
-    let pagesCached = meta.complete ? 0 : meta.pagesCached;
-    let recordsFetched = meta.complete ? 0 : meta.recordsFetched;
+    let meta = activeMeta;
+    if (meta.complete) {
+      const completedMeta = {
+        ...meta,
+        lastRefreshStatus: "complete",
+        currentBatchPages: DATASET_CACHE.minimumBatchPages,
+      };
+      await env.REVE_DATASET.put(DATASET_CACHE.metaKey, JSON.stringify(completedMeta));
+      return completedMeta;
+    }
+
+    if (isRefreshBlockedByBackoff(meta)) return meta;
+
+    const currentBatchPages = getCurrentBatchPages(meta);
+    const startPage = meta.nextPage || meta.pagesCached + 1 || 1;
+    const endPage = Math.min(startPage + currentBatchPages - 1, DATASET_CACHE.maxPages);
+    let pagesCached = meta.pagesCached;
+    let recordsFetched = meta.recordsFetched;
     let complete = false;
 
     for (let page = startPage; page <= endPage; page += 1) {
+      failedPage = page;
       const upstreamData = await fetchReveJson(
         "/locations",
         { page: String(page), limit: String(DATASET_CACHE.limit) },
@@ -306,33 +317,51 @@ async function refreshDatasetBatch(env, ctx, request, options = {}) {
       pagesCached = Math.max(pagesCached, page);
       recordsFetched += pageItems.length;
 
-      if (pageItems.length < DATASET_CACHE.limit) {
+      if (pageItems.length === 0 || pageItems.length < DATASET_CACHE.limit) {
         complete = true;
         break;
       }
     }
 
     const newMeta = {
+      ...meta,
       version: 2,
       limit: DATASET_CACHE.limit,
       maxPages: DATASET_CACHE.maxPages,
-      batchPages: DATASET_CACHE.batchPages,
+      batchPages: DATASET_CACHE.defaultBatchPages,
       pagesCached,
       recordsFetched,
       complete,
       reachedConfiguredLimit: pagesCached >= DATASET_CACHE.maxPages && !complete,
-      nextPage: pagesCached + 1,
+      nextPage: complete ? pagesCached : pagesCached + 1,
       lastRefresh: new Date().toISOString(),
       lastError: null,
+      lastRefreshStatus: "success",
+      lastUpstreamStatus: 200,
+      lastUpstreamErrorType: null,
+      lastFailedPage: null,
+      lastFailedRefresh: null,
+      consecutiveUpstreamErrors: 0,
+      nextAllowedRefreshAt: null,
+      currentBatchPages: DATASET_CACHE.defaultBatchPages,
     };
     await env.REVE_DATASET.put(DATASET_CACHE.metaKey, JSON.stringify(newMeta));
     return newMeta;
   } catch (error) {
-    const meta = normalizeDatasetMeta(await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json"));
+    const meta = normalizeDatasetMeta(await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json")) || activeMeta;
+    const consecutiveUpstreamErrors = (meta.consecutiveUpstreamErrors || 0) + 1;
+    const nextAllowedRefreshAt = getNextAllowedRefreshAt(error, consecutiveUpstreamErrors);
     const failedMeta = {
       ...meta,
       lastError: error instanceof PublicError ? error.code : "refresh_failed",
+      lastRefreshStatus: "error",
+      lastUpstreamStatus: error instanceof PublicError ? error.upstreamStatus || error.status : null,
+      lastUpstreamErrorType: error instanceof PublicError ? error.upstreamErrorType || error.code : "refresh_failed",
+      lastFailedPage: failedPage,
       lastFailedRefresh: new Date().toISOString(),
+      consecutiveUpstreamErrors,
+      nextAllowedRefreshAt,
+      currentBatchPages: consecutiveUpstreamErrors >= 2 ? DATASET_CACHE.minimumBatchPages : getCurrentBatchPages(meta),
     };
     await env.REVE_DATASET.put(DATASET_CACHE.metaKey, JSON.stringify(failedMeta));
     return failedMeta;
@@ -356,32 +385,64 @@ function normalizeDatasetMeta(meta) {
       version: 2,
       limit: DATASET_CACHE.limit,
       maxPages: DATASET_CACHE.maxPages,
-      batchPages: DATASET_CACHE.batchPages,
+      batchPages: DATASET_CACHE.defaultBatchPages,
       pagesCached: 0,
       recordsFetched: 0,
       complete: false,
       reachedConfiguredLimit: false,
       nextPage: 1,
       lastRefresh: null,
+      lastRefreshStatus: "empty",
+      lastUpstreamStatus: null,
+      lastUpstreamErrorType: null,
+      lastFailedPage: null,
+      lastFailedRefresh: null,
+      consecutiveUpstreamErrors: 0,
+      nextAllowedRefreshAt: null,
+      currentBatchPages: DATASET_CACHE.defaultBatchPages,
     };
   }
   return {
     ...meta,
+    batchPages: DATASET_CACHE.defaultBatchPages,
     pagesCached: Number(meta.pagesCached) || 0,
     recordsFetched: Number(meta.recordsFetched) || 0,
     nextPage: Number(meta.nextPage) || (Number(meta.pagesCached) || 0) + 1,
     complete: meta.complete === true,
+    consecutiveUpstreamErrors: Number(meta.consecutiveUpstreamErrors) || 0,
+    currentBatchPages: Number(meta.currentBatchPages) || DATASET_CACHE.defaultBatchPages,
   };
 }
 
 async function handleDatasetStatus(request, env) {
   const meta = env.REVE_DATASET ? normalizeDatasetMeta(await env.REVE_DATASET.get(DATASET_CACHE.metaKey, "json")) : null;
+  const isStale = meta?.lastRefresh ? Date.now() - Date.parse(meta.lastRefresh) > DATASET_CACHE.staleAfterMs : true;
   return safeJson(
     {
       ok: true,
       kvAvailable: Boolean(env.REVE_DATASET),
+      datasetComplete: meta?.complete === true,
+      recordsCached: meta?.recordsFetched || 0,
+      pagesCached: meta?.pagesCached || 0,
+      nextPageToFetch: meta?.complete ? null : meta?.nextPage || 1,
+      lastRefreshAt: meta?.lastRefresh || null,
+      lastRefreshStatus: meta?.lastRefreshStatus || (meta?.lastError ? "error" : meta?.lastRefresh ? "success" : "unknown"),
+      lastUpstreamStatus: meta?.lastUpstreamStatus || null,
+      lastUpstreamErrorType: meta?.lastUpstreamErrorType || meta?.lastError || null,
+      lastFailedPage: meta?.lastFailedPage || null,
+      lastFailedRefresh: meta?.lastFailedRefresh || null,
+      consecutiveUpstreamErrors: meta?.consecutiveUpstreamErrors || 0,
+      currentBatchPages: getCurrentBatchPages(meta),
+      hourlyRequestLimit: DATASET_CACHE.hourlyRequestLimit,
+      estimatedRecordsPerHour: getCurrentBatchPages(meta) * DATASET_CACHE.limit,
+      nextAllowedRefreshAt: meta?.nextAllowedRefreshAt || null,
+      cacheStatus: meta ? (isStale ? "stale" : "hit") : "miss",
+      limitationMessage: meta?.complete
+        ? null
+        : "La API externa no permite busqueda geografica directa. Los resultados se calculan sobre los datos disponibles en cache y pueden no coincidir exactamente con el mapa oficial.",
+      recommendedAction: getDatasetRecommendedAction(meta),
       meta,
-      strategy: "KV progressive cache over /locations pages; searches filter cached dataset by distance.",
+      strategy: "KV progressive cache over /locations pages; normal searches only filter cached dataset by distance. Cron warms the dataset with conservative backoff.",
     },
     200,
     request,
@@ -495,6 +556,8 @@ async function fetchReveJson(path, params, request, env, ctx, ttlSeconds) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached.json();
 
+  await reserveHourlyReveRequest(env);
+
   const upstreamResponse = await fetch(upstreamUrl, {
     method: "GET",
     headers: {
@@ -504,12 +567,18 @@ async function fetchReveJson(path, params, request, env, ctx, ttlSeconds) {
   });
 
   if (!upstreamResponse.ok) {
+    const retryAfterAt = getRetryAfterAt(upstreamResponse.headers.get("Retry-After"));
     throw new PublicError(
       "upstream_error",
       upstreamResponse.status === 429
         ? "Mapa REVE ha indicado limite de solicitudes. Intentalo mas tarde."
         : "Mapa REVE no ha devuelto una respuesta valida.",
       upstreamResponse.status,
+      {
+        upstreamStatus: upstreamResponse.status,
+        upstreamErrorType: upstreamResponse.status === 429 ? "rate_limited" : `http_${upstreamResponse.status}`,
+        retryAfterAt,
+      },
     );
   }
 
@@ -523,6 +592,69 @@ async function fetchReveJson(path, params, request, env, ctx, ttlSeconds) {
   });
   ctx.waitUntil(caches.default.put(cacheKey, cacheResponse.clone()));
   return data;
+}
+
+async function reserveHourlyReveRequest(env) {
+  if (!env.REVE_DATASET) return;
+  const now = Date.now();
+  const cutoff = now - 60 * 60 * 1000;
+  const raw = await env.REVE_DATASET.get(DATASET_CACHE.rateKey, "json");
+  const requests = Array.isArray(raw?.requests) ? raw.requests.filter((value) => Number(value) > cutoff) : [];
+  if (requests.length >= DATASET_CACHE.hourlyRequestLimit) {
+    const oldest = Math.min(...requests);
+    throw new PublicError(
+      "rate_limited",
+      "Se ha alcanzado el limite prudente de consultas horarias a Mapa REVE.",
+      429,
+      {
+        upstreamStatus: 429,
+        upstreamErrorType: "local_hourly_limit",
+        retryAfterAt: new Date(oldest + 60 * 60 * 1000).toISOString(),
+      },
+    );
+  }
+  requests.push(now);
+  await env.REVE_DATASET.put(DATASET_CACHE.rateKey, JSON.stringify({ requests }));
+}
+
+function getCurrentBatchPages(meta) {
+  if (!meta) return DATASET_CACHE.minimumBatchPages;
+  if (meta.consecutiveUpstreamErrors >= 2) return DATASET_CACHE.minimumBatchPages;
+  return Math.max(
+    DATASET_CACHE.minimumBatchPages,
+    Math.min(Number(meta.currentBatchPages) || DATASET_CACHE.defaultBatchPages, DATASET_CACHE.defaultBatchPages),
+  );
+}
+
+function isRefreshBlockedByBackoff(meta) {
+  if (!meta?.nextAllowedRefreshAt) return false;
+  const nextAllowed = Date.parse(meta.nextAllowedRefreshAt);
+  return Number.isFinite(nextAllowed) && Date.now() < nextAllowed;
+}
+
+function getNextAllowedRefreshAt(error, consecutiveUpstreamErrors) {
+  if (error instanceof PublicError && error.retryAfterAt) return error.retryAfterAt;
+  if (consecutiveUpstreamErrors >= DATASET_CACHE.backoffAfterErrors) {
+    return new Date(Date.now() + DATASET_CACHE.backoffMs).toISOString();
+  }
+  return null;
+}
+
+function getRetryAfterAt(value) {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) return new Date(Date.now() + seconds * 1000).toISOString();
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? new Date(date).toISOString() : null;
+}
+
+function getDatasetRecommendedAction(meta) {
+  if (!meta) return "Esperar al primer ciclo de cron para calentar la cache.";
+  if (meta.complete) return "Dataset completado; mantener consultas desde cache.";
+  if (isRefreshBlockedByBackoff(meta)) return "Esperar a nextAllowedRefreshAt antes de reintentar para respetar la cuota de Mapa REVE.";
+  if ((meta.consecutiveUpstreamErrors || 0) >= 3) return "Mantener currentBatchPages=1 y revisar si Mapa REVE sigue limitando paginas posteriores.";
+  if ((meta.consecutiveUpstreamErrors || 0) > 0) return "Reintentar en el siguiente ciclo horario conservando la cache previa.";
+  return "Continuar calentando la cache mediante cron horario.";
 }
 
 function normalizeRoute(pathname) {
@@ -672,11 +804,14 @@ function corsHeaders(request, extraHeaders = {}) {
 }
 
 class PublicError extends Error {
-  constructor(code, publicMessage, status = 400) {
+  constructor(code, publicMessage, status = 400, details = {}) {
     super(publicMessage);
     this.name = "PublicError";
     this.code = code;
     this.publicMessage = publicMessage;
     this.status = status;
+    this.upstreamStatus = details.upstreamStatus || null;
+    this.upstreamErrorType = details.upstreamErrorType || null;
+    this.retryAfterAt = details.retryAfterAt || null;
   }
 }

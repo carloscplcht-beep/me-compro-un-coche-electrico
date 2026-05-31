@@ -22,8 +22,10 @@ Para evitar que cada usuario dispare una descarga masiva, el Worker usa una cach
 
 - Guarda páginas de `/locations` en `REVE_DATASET`.
 - Lee todas las páginas ya cacheadas para cada búsqueda por radio.
-- Si la cache está incompleta o antigua, intenta refrescar una tanda de 5 páginas en segundo plano.
-- Un Cron Trigger ejecuta el mismo refresco una vez por hora.
+- Las búsquedas normales no consultan Mapa REVE si hay dataset KV; solo filtran los datos cacheados.
+- Un Cron Trigger ejecuta el refresco una vez por hora.
+- El refresco usa por defecto 2 páginas por ciclo horario, por debajo del límite oficial de 5 solicitudes/hora.
+- Si aparecen errores upstream repetidos, reduce temporalmente el lote a 1 página y aplica backoff.
 - La respuesta indica `datasetComplete`, `cacheStatus`, `lastDatasetRefresh`, `recordsFetched`, `resultsAfterDistanceFilter` y `dataLimitationMessage`.
 
 Mientras `datasetComplete` no sea `true`, los resultados deben leerse como resultados disponibles dentro de los datos consultados, no como un reflejo exhaustivo del mapa oficial.
@@ -39,8 +41,9 @@ https://TU_WORKER.workers.dev
 Rutas:
 
 - `GET /health`
-- `GET /locations/nearby?lat=40.4168&lon=-3.7038&radius_km=10&page=1&limit=100&max_pages=5`
+- `GET /locations/nearby?lat=40.4168&lon=-3.7038&radius_km=10&page=1&limit=100&max_pages=2`
 - `GET /dataset/status`
+- `GET /dataset-status`
 - `GET /locations/{location_id}`
 - `GET /evses/{evse_id}`
 - `GET /evses/{evse_id}/status`
@@ -56,7 +59,7 @@ Parámetros principales:
 - `radius_km`: radio entre `0.1` y `250`.
 - `page`: entero desde `1`.
 - `limit`: entero entre `1` y `100`.
-- `max_pages`: entero entre `1` y `5`. Cada página puede consumir una petición upstream si no está cacheada. El frontend usa `5` para mejorar cobertura sin superar la ventana segura de cuota.
+- `max_pages`: entero entre `1` y `2` para consultas sin dataset KV. En la web publicada las búsquedas normales usan KV, por lo que este parámetro no dispara peticiones a Mapa REVE.
 - `date_from`: fecha ISO 8601.
 - `only_dynamic_info`: `true` o `false`.
 
@@ -70,6 +73,21 @@ Parámetros principales:
 - Para desarrollo se permite `localhost`, `127.0.0.1` y `[::1]`.
 - Los errores devueltos son genéricos y no incluyen cuerpo crudo de la API externa.
 - Se usa caché de Cloudflare para reducir consumo de la cuota de Mapa REVE.
+- Se guarda un contador horario en KV para no superar el límite prudente de 5 solicitudes/hora.
+- El endpoint `/dataset-status` expone solo métricas operativas seguras: registros cacheados, cursor, errores y recomendación de acción.
+
+## Estrategia de resiliencia REVE
+
+- `currentBatchPages` empieza en `2`.
+- Si hay 1 error upstream, conserva cursor y reintenta en el siguiente ciclo horario.
+- Si hay 2 errores consecutivos, reduce `currentBatchPages` a `1`.
+- Si hay 3 errores consecutivos, mantiene `currentBatchPages=1` y espera `nextAllowedRefreshAt` cuando procede.
+- Si una página devuelve menos de 100 registros, marca `datasetComplete=true`.
+- Si una página devuelve 0 registros, marca `datasetComplete=true`.
+- Nunca borra el dataset existente por un error upstream.
+- Nunca recalcula desde cero salvo que se haga una acción manual explícita fuera de la web.
+
+El refresco manual `/admin/refresh-dataset` queda pendiente de forma deliberada. Para implementarlo con seguridad debe protegerse con un secreto independiente (`REVE_ADMIN_TOKEN`) y seguir respetando el límite horario.
 
 ## Crear y desplegar el Worker
 
@@ -139,7 +157,7 @@ curl.exe "http://localhost:8787/health"
 Búsqueda por radio usando cache compartida si `REVE_DATASET` está configurado:
 
 ```powershell
-curl.exe "http://localhost:8787/locations/nearby?lat=40.4168&lon=-3.7038&radius_km=20&page=1&limit=100&max_pages=5"
+curl.exe "http://localhost:8787/locations/nearby?lat=40.4168&lon=-3.7038&radius_km=20&page=1&limit=100&max_pages=2"
 ```
 
 Detalle de Location:
