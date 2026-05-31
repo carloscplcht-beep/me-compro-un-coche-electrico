@@ -32,7 +32,7 @@
           <span class="hero-recharge-link__icon" aria-hidden="true">⌁</span>
           <span>
             <strong>Explorar red de recarga cercana</strong>
-            <small>Consulta puntos disponibles antes de decidir</small>
+            <small>Consulta ubicaciones disponibles antes de decidir</small>
           </span>
         </a>
       </div>
@@ -164,12 +164,17 @@
           <p class="panel__eyebrow">Mapa REVE</p>
           <h2 id="recharge-title">Red de recarga cercana</h2>
           <p class="recharge-section__intro">
-            Consulta puntos de recarga próximos usando el proxy seguro. Esta información no modifica todavía
+            Consulta ubicaciones de recarga próximas usando el proxy seguro. Esta información no modifica todavía
             el score principal del análisis.
           </p>
         </div>
         <p class="recharge-source">Fuente de datos: RED ELÉCTRICA DE ESPAÑA, S.A.U. / mapa REVE</p>
       </div>
+
+      <p class="recharge-data-note">
+        Cada ubicación puede incluir uno o varios EVSE o conectores. La API pública no permite contar
+        mangueras físicas de forma fiable.
+      </p>
 
       <form id="recharge-search-form" class="recharge-search" novalidate>
         <label class="recharge-search__field">
@@ -210,17 +215,22 @@
       </form>
 
       <div id="recharge-status" class="recharge-status" role="status">
-        Introduce una ubicación o usa tu geolocalización para consultar la red de recarga.
+        Introduce una ubicación o usa tu geolocalización para consultar ubicaciones de recarga cercanas.
       </div>
 
       <div class="recharge-summary-grid" aria-label="Resumen de red de recarga">
         <article class="recharge-summary-card">
-          <span>Resultados disponibles</span>
+          <span>Ubicaciones encontradas</span>
           <strong id="recharge-count">--</strong>
           <small id="recharge-count-detail">Sin busqueda activa</small>
         </article>
+        <article id="recharge-connectors-card" class="recharge-summary-card" hidden>
+          <span>Conectores declarados</span>
+          <strong id="recharge-connectors-count">--</strong>
+          <small id="recharge-connectors-detail">según datos disponibles de la API</small>
+        </article>
         <article class="recharge-summary-card">
-          <span>Mas cercano</span>
+          <span>Ubicación más cercana</span>
           <strong id="recharge-nearest-name" title="">--</strong>
           <small id="recharge-nearest-meta">Distancia y potencia no disponibles</small>
           <small id="recharge-nearest-address">--</small>
@@ -229,7 +239,7 @@
           <span>Carga mas rapida detectada</span>
           <strong id="recharge-fastest-power">--</strong>
           <small id="recharge-fastest-name" title="">--</small>
-          <small id="recharge-fastest-meta">Punto y distancia no disponibles</small>
+          <small id="recharge-fastest-meta">Ubicación y distancia no disponibles</small>
         </article>
         <article class="recharge-summary-card">
           <span>Cobertura</span>
@@ -238,20 +248,20 @@
         </article>
       </div>
 
-      <p class="recharge-summary-note">Los indicadores pueden corresponder a estaciones diferentes.</p>
+      <p class="recharge-summary-note">Los indicadores pueden corresponder a ubicaciones diferentes.</p>
 
       <div class="recharge-map-layout">
-        <div id="recharge-map" class="recharge-map" aria-label="Mapa de puntos de recarga cercanos">
+        <div id="recharge-map" class="recharge-map" aria-label="Mapa de ubicaciones de recarga cercanas">
           <div class="recharge-map__center" aria-label="Centro de búsqueda"></div>
-          <p id="recharge-map-empty" class="recharge-map__empty">Busca una localidad o usa tu ubicacion para ver puntos de recarga cercanos.</p>
+          <p id="recharge-map-empty" class="recharge-map__empty">Busca una localidad o usa tu ubicacion para ver ubicaciones de recarga cercanas.</p>
         </div>
         <div class="recharge-results-panel">
           <div class="recharge-results-panel__head">
-            <h3>Puntos destacados</h3>
+            <h3>Ubicaciones destacadas</h3>
             <span id="recharge-updated">Última consulta: --</span>
           </div>
           <div id="recharge-results-list" class="recharge-results-list"></div>
-          <button type="button" id="recharge-show-more-button" class="button button--ghost recharge-show-more" hidden>Ver mÃ¡s puntos</button>
+          <button type="button" id="recharge-show-more-button" class="button button--ghost recharge-show-more" hidden>Ver más ubicaciones</button>
         </div>
       </div>
     </section>

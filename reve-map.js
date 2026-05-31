@@ -3,7 +3,7 @@
   const PROXY_BASE_URL = (window.REVE_PROXY_BASE_URL || DEFAULT_PROXY_URL).replace(/\/$/, "");
   const DEFAULT_RADIUS_KM = 10;
   const INITIAL_CENTER = { lat: 40.4168, lon: -3.7038, label: "Espana" };
-  const INITIAL_STATUS = "Busca una localidad o usa tu ubicacion para ver puntos de recarga cercanos.";
+  const INITIAL_STATUS = "Busca una localidad o usa tu ubicacion para ver ubicaciones de recarga cercanas.";
   const PAGE_SIZE = 6;
 
   const LOCALITIES = [
@@ -100,6 +100,9 @@
     dom.status = document.querySelector("#recharge-status");
     dom.count = document.querySelector("#recharge-count");
     dom.countDetail = document.querySelector("#recharge-count-detail");
+    dom.connectorsCard = document.querySelector("#recharge-connectors-card");
+    dom.connectorsCount = document.querySelector("#recharge-connectors-count");
+    dom.connectorsDetail = document.querySelector("#recharge-connectors-detail");
     dom.nearestName = document.querySelector("#recharge-nearest-name");
     dom.nearestMeta = document.querySelector("#recharge-nearest-meta");
     dom.nearestAddress = document.querySelector("#recharge-nearest-address");
@@ -257,7 +260,7 @@
     visibleCount = PAGE_SIZE;
 
     ensureMap();
-    setLoading(true, `Consultando puntos de recarga cerca de ${center.label}...`);
+    setLoading(true, `Consultando ubicaciones de recarga cerca de ${center.label}...`);
     updateRadiusHelp();
 
     try {
@@ -299,9 +302,10 @@
       dom.countDetail.textContent = `en un radio de ${radiusKm} km`;
       dom.coverage.textContent = "Baja";
       dom.coverage.dataset.tone = "low";
-      dom.coverageCopy.textContent = "pocos puntos disponibles en el radio seleccionado";
+      dom.coverageCopy.textContent = "pocas ubicaciones disponibles en el radio seleccionado";
       dom.updated.textContent = getDatasetUpdatedText(meta);
-      setStatus(`No se han encontrado puntos en esta consulta para ${radiusKm} km alrededor de ${center.label}. ${getDataLimitationCopy(meta)}`, "empty");
+      setConnectorsSummary([]);
+      setStatus(`No se han encontrado ubicaciones en esta consulta para ${radiusKm} km alrededor de ${center.label}. Prueba a ampliar el radio o buscar otra ubicacion. ${getDataLimitationCopy(meta)}`, "empty");
       return;
     }
 
@@ -314,6 +318,7 @@
 
     dom.count.textContent = String(locations.length);
     dom.countDetail.textContent = `en un radio de ${radiusKm} km`;
+    setConnectorsSummary(locations);
 
     const nearestPower = getMaxPowerWatts([nearest]);
     setTextWithTitle(dom.nearestName, getLocationName(nearest));
@@ -347,7 +352,7 @@
       mostrados_lista: Math.min(visibleCount, locations.length),
     });
 
-    setStatus(`Se han encontrado ${locations.length} resultados disponibles en esta consulta para un radio de ${radiusKm} km alrededor de ${center.label}. ${getDataLimitationCopy(meta)}`, "success");
+    setStatus(`Se han encontrado ${locations.length} ubicaciones disponibles en esta consulta para un radio de ${radiusKm} km alrededor de ${center.label}. ${getDataLimitationCopy(meta)}`, "success");
 
     if (radiusKm === 100) {
       dom.status.textContent += " Radio amplio: util para valorar rutas y desplazamientos cercanos, no solo carga cotidiana.";
@@ -360,19 +365,34 @@
   function renderEmptyResults() {
     dom.count.textContent = "--";
     dom.countDetail.textContent = "Sin busqueda activa";
+    setConnectorsSummary([]);
     setTextWithTitle(dom.nearestName, "--");
     dom.nearestMeta.textContent = "Distancia y potencia no disponibles";
     dom.nearestAddress.textContent = "--";
     dom.fastestPower.textContent = "--";
     setTextWithTitle(dom.fastestName, "--");
-    dom.fastestMeta.textContent = "Punto y distancia no disponibles";
+    dom.fastestMeta.textContent = "Ubicacion y distancia no disponibles";
     dom.coverage.textContent = "--";
     dom.coverageCopy.textContent = "Sin busqueda activa";
     delete dom.coverage.dataset.tone;
     dom.updated.textContent = "Ultima consulta: --";
-    dom.list.innerHTML = `<p class="recharge-results-list__empty">Todavia no hay puntos para listar.</p>`;
+    dom.list.innerHTML = `<p class="recharge-results-list__empty">Todavia no hay ubicaciones para listar.</p>`;
     dom.showMore.hidden = true;
     clearMap();
+  }
+
+  function setConnectorsSummary(locations) {
+    if (!dom.connectorsCard || !dom.connectorsCount || !dom.connectorsDetail) return;
+    const total = getDeclaredConnectorCount(locations);
+    const hasConnectorData = total > 0;
+    dom.connectorsCard.hidden = !hasConnectorData;
+    if (!hasConnectorData) {
+      dom.connectorsCount.textContent = "--";
+      dom.connectorsDetail.textContent = "según datos disponibles de la API";
+      return;
+    }
+    dom.connectorsCount.textContent = String(total);
+    dom.connectorsDetail.textContent = "según datos disponibles de la API";
   }
 
   function renderMapPoints(locations, center, radiusKm) {
@@ -461,7 +481,8 @@
           </div>
           <dl>
             <div><dt>Distancia</dt><dd>${distance}</dd></div>
-            <div><dt>Potencia</dt><dd>${power > 0 ? formatPower(power) : "N/D"}</dd></div>
+            <div><dt>Potencia maxima declarada</dt><dd>${power > 0 ? formatPower(power) : "N/D"}</dd></div>
+            <div><dt>Conectores declarados</dt><dd>${formatConnectorCount(getDeclaredConnectorCount(location))}</dd></div>
             <div><dt>Operador</dt><dd>${operator}</dd></div>
           </dl>
           ${mapsUrl ? `<a class="recharge-location-card__maps" href="${mapsUrl}" target="_blank" rel="noopener">Abrir en Google Maps</a>` : ""}
@@ -470,7 +491,7 @@
     }).join("");
 
     dom.showMore.hidden = visibleCount >= locations.length;
-    dom.showMore.textContent = `Ver mas puntos (${Math.min(PAGE_SIZE, locations.length - visibleCount)} mas)`;
+    dom.showMore.textContent = `Ver mas ubicaciones (${Math.min(PAGE_SIZE, locations.length - visibleCount)} mas)`;
   }
 
   function highlightLocationCard(index) {
@@ -483,7 +504,7 @@
     }
     const location = lastLocations[index];
     if (location) {
-      setStatus(`${getLocationName(location)} esta fuera de los primeros puntos mostrados. Pulsa "Ver mas puntos" para ampliar la lista.`, "success");
+      setStatus(`${getLocationName(location)} esta fuera de las primeras ubicaciones mostradas. Pulsa "Ver mas ubicaciones" para ampliar la lista.`, "success");
     }
   }
 
@@ -577,8 +598,7 @@
 
   function getDataLimitationCopy(meta) {
     if (meta?.datasetComplete === true) return "";
-    return meta?.dataLimitationMessage ||
-      "La API externa no permite busqueda geografica directa. Los resultados se calculan sobre los datos disponibles consultados y pueden no coincidir exactamente con el mapa oficial.";
+    return "La API externa no permite busqueda geografica directa; los resultados se calculan sobre datos disponibles en cache y pueden no coincidir exactamente con el mapa oficial.";
   }
 
   function logSafeDiagnostics(event, data) {
@@ -604,12 +624,12 @@
     const density = count / Math.max(radiusKm, 1);
 
     if ((radiusKm <= 10 && count >= 8) || (radiusKm <= 25 && count >= 12) || (radiusKm <= 50 && count >= 18) || (radiusKm >= 100 && count >= 28 && nearestDistance <= 20)) {
-      return { label: "Alta", tone: "high", copy: "buena disponibilidad de puntos en el radio seleccionado" };
+      return { label: "Alta", tone: "high", copy: "buena disponibilidad de ubicaciones en el radio seleccionado" };
     }
     if (count >= 4 || density >= 0.12 || fastestPower >= 150000) {
       return { label: "Media", tone: "medium", copy: "red aceptable, conviene revisar ubicacion y potencia" };
     }
-    return { label: "Baja", tone: "low", copy: "pocos puntos disponibles en el radio seleccionado" };
+    return { label: "Baja", tone: "low", copy: "pocas ubicaciones disponibles en el radio seleccionado" };
   }
 
   function updateRadiusHelp() {
@@ -640,7 +660,7 @@
   }
 
   function getLocationName(location) {
-    return location?.name || location?.address || location?.id || "Punto de recarga";
+    return location?.name || location?.address || location?.id || "Ubicacion de recarga";
   }
 
   function getAddress(location) {
@@ -667,6 +687,22 @@
       });
       return max;
     }, 0);
+  }
+
+  function getDeclaredConnectorCount(input) {
+    const locations = Array.isArray(input) ? input : input ? [input] : [];
+    return locations.reduce((total, location) => {
+      const evses = Array.isArray(location?.evses) ? location.evses : location?.evses ? [location.evses] : [];
+      evses.forEach((evse) => {
+        const connectors = Array.isArray(evse.connectors) ? evse.connectors : evse.connectors ? [evse.connectors] : [];
+        total += connectors.length;
+      });
+      return total;
+    }, 0);
+  }
+
+  function formatConnectorCount(value) {
+    return value > 0 ? String(value) : "N/D";
   }
 
   function getLatestUpdated(locations) {
