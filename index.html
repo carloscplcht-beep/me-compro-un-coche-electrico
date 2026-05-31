@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Herramienta para analizar si la compra de un vehículo eléctrico es viable según tu uso, tu infraestructura de carga y el impacto económico esperado.">
   <!-- En un hosting estático como GitHub Pages la CSP razonable se puede reforzar por meta; frame-ancestors requiere cabecera HTTP. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://mapa-reve-proxy.carlospenalaguna.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <meta name="theme-color" content="#0f766e">
   <title>¿Me compro un vehículo eléctrico?</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -147,6 +148,89 @@
       </aside>
     </div>
 
+    <section id="recharge-network" class="recharge-section reveal" aria-labelledby="recharge-title">
+      <div class="recharge-section__head">
+        <div>
+          <p class="panel__eyebrow">Mapa REVE</p>
+          <h2 id="recharge-title">Red de recarga cercana</h2>
+          <p class="recharge-section__intro">
+            Consulta puntos de recarga próximos usando el proxy seguro. Esta información no modifica todavía
+            el score principal del análisis.
+          </p>
+        </div>
+        <p class="recharge-source">Fuente de datos: RED ELÉCTRICA DE ESPAÑA, S.A.U. / mapa REVE</p>
+      </div>
+
+      <form id="recharge-search-form" class="recharge-search" novalidate>
+        <label class="recharge-search__field">
+          <span>Ubicación</span>
+          <input id="recharge-location-input" type="text" autocomplete="off" list="recharge-city-suggestions" placeholder="Ej. Madrid o 40.4168, -3.7038">
+          <datalist id="recharge-city-suggestions">
+            <option value="Madrid"></option>
+            <option value="Barcelona"></option>
+            <option value="Valencia"></option>
+            <option value="Sevilla"></option>
+            <option value="Zaragoza"></option>
+            <option value="Málaga"></option>
+            <option value="Bilbao"></option>
+            <option value="A Coruña"></option>
+          </datalist>
+        </label>
+        <label class="recharge-search__field recharge-search__field--compact">
+          <span>Radio</span>
+          <select id="recharge-radius-select">
+            <option value="5">5 km</option>
+            <option value="10" selected>10 km</option>
+            <option value="25">25 km</option>
+            <option value="50">50 km</option>
+          </select>
+        </label>
+        <div class="recharge-search__actions">
+          <button type="button" id="recharge-geolocate-button" class="button button--secondary">Usar mi ubicación</button>
+          <button type="submit" class="button button--primary">Buscar recarga</button>
+        </div>
+      </form>
+
+      <div id="recharge-status" class="recharge-status" role="status">
+        Introduce una ubicación o usa tu geolocalización para consultar la red de recarga.
+      </div>
+
+      <div class="recharge-summary-grid" aria-label="Resumen de red de recarga">
+        <article class="recharge-summary-card">
+          <span>Puntos encontrados</span>
+          <strong id="recharge-count">--</strong>
+        </article>
+        <article class="recharge-summary-card">
+          <span>Punto más cercano</span>
+          <strong id="recharge-nearest">--</strong>
+        </article>
+        <article class="recharge-summary-card">
+          <span>Potencia máxima</span>
+          <strong id="recharge-power">--</strong>
+        </article>
+        <article class="recharge-summary-card">
+          <span>Cobertura</span>
+          <strong id="recharge-coverage">--</strong>
+        </article>
+      </div>
+
+      <div class="recharge-map-layout">
+        <div id="recharge-map" class="recharge-map" aria-label="Mapa esquemático de puntos de recarga">
+          <div class="recharge-map__grid" aria-hidden="true"></div>
+          <div class="recharge-map__center" aria-label="Centro de búsqueda"></div>
+          <div id="recharge-map-points" class="recharge-map__points"></div>
+          <p id="recharge-map-empty" class="recharge-map__empty">Sin puntos para mostrar todavía.</p>
+        </div>
+        <div class="recharge-results-panel">
+          <div class="recharge-results-panel__head">
+            <h3>Puntos destacados</h3>
+            <span id="recharge-updated">Última consulta: --</span>
+          </div>
+          <div id="recharge-results-list" class="recharge-results-list"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="results-section" class="results-section is-hidden" aria-live="polite">
       <div class="results-section__head reveal">
         <div>
@@ -193,5 +277,6 @@
 
   <script src="script.js"></script>
   <script src="app-fixes.js"></script>
+  <script src="reve-map.js"></script>
 </body>
 </html>

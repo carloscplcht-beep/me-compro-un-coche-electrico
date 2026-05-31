@@ -1,0 +1,7 @@
+name = "mapa-reve-proxy"
+main = "worker.js"
+compatibility_date = "2026-05-31"
+
+# No pongas MAPA_REVE_API_KEY en este archivo.
+# Configura el secreto con:
+# wrangler secret put MAPA_REVE_API_KEY

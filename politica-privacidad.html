@@ -7,6 +7,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <meta name="theme-color" content="#0f766e">
   <title>Política de privacidad | Vehículo Eléctrico</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -16,35 +17,75 @@
     <div class="grid-glow"></div>
   </div>
 
-  <main class="app-shell">
-    <section class="result-card reveal is-visible">
+  <main class="privacy-page reveal">
+    <a class="privacy-page__back" href="index.html">Volver a la herramienta</a>
+
+    <section class="privacy-card">
       <p class="eyebrow">Privacidad</p>
       <h1>Política de privacidad</h1>
-      <p>Esta política explica cómo trata los datos la aplicación “Vehículo Eléctrico”.</p>
+      <p class="privacy-page__lead">
+        Esta política explica cómo trata los datos la aplicación “Vehículo Eléctrico”.
+      </p>
 
       <h2>Responsable</h2>
-      <p>Carlos Peña Laguna es el responsable de esta herramienta de análisis orientativo de viabilidad de vehículo eléctrico.</p>
+      <p>
+        Carlos Peña Laguna es el responsable de esta herramienta de análisis orientativo de viabilidad
+        de vehículo eléctrico.
+      </p>
 
       <h2>Datos que introduce el usuario</h2>
-      <p>La aplicación solicita información sobre uso del vehículo, costes energéticos, presupuesto e infraestructura de carga para generar una estimación personalizada. Esa información se procesa en el propio dispositivo y no se envía a servidores externos.</p>
+      <p>
+        La aplicación solicita información sobre uso del vehículo, costes energéticos, presupuesto e
+        infraestructura de carga para generar una estimación personalizada. Esa información se procesa
+        en el propio dispositivo y no se envía a servidores externos.
+      </p>
 
       <h2>Recogida y compartición de datos</h2>
-      <p>La aplicación no recoge datos personales, no comparte datos con terceros, no utiliza analítica, no muestra anuncios y no incorpora SDKs externos de seguimiento.</p>
+      <p>
+        La aplicación no recoge datos personales, no comparte datos con terceros, no utiliza analítica,
+        no muestra anuncios y no incorpora SDKs externos de seguimiento.
+      </p>
+
+      <h2>Consulta opcional de red de recarga</h2>
+      <p>
+        La sección “Red de recarga cercana” permite buscar puntos de recarga por ciudad, coordenadas
+        o ubicación del dispositivo. Si el usuario utiliza esta función, la aplicación envía al proxy
+        seguro de la herramienta las coordenadas aproximadas y el radio elegido para consultar mapa REVE.
+        La clave de acceso a mapa REVE no se expone en el navegador y esta consulta no modifica el score
+        principal del análisis.
+      </p>
+      <p>
+        Los datos mostrados proceden de RED ELÉCTRICA DE ESPAÑA, S.A.U. / mapa REVE. La herramienta no
+        usa esa consulta para analítica, publicidad ni seguimiento, y no almacena historiales de ubicación
+        en el propio frontend.
+      </p>
 
       <h2>Almacenamiento local</h2>
-      <p>Si el usuario mantiene activada la opción de guardar datos, las respuestas pueden almacenarse localmente en el dispositivo mediante almacenamiento local del navegador o del WebView. Este guardado sirve únicamente para no perder el análisis al recargar o volver a abrir la herramienta.</p>
+      <p>
+        Si el usuario mantiene activada la opción de guardar datos, las respuestas pueden almacenarse
+        localmente en el dispositivo mediante almacenamiento local del navegador o del WebView. Este
+        guardado sirve únicamente para no perder el análisis al recargar o volver a abrir la herramienta.
+      </p>
 
       <h2>Cómo borrar los datos</h2>
-      <p>El usuario puede borrar los datos usando la opción de nuevo análisis o eliminando los datos de la aplicación desde los ajustes del dispositivo.</p>
+      <p>
+        El usuario puede borrar los datos usando la opción de nuevo análisis o eliminando los datos de
+        la aplicación desde los ajustes del dispositivo.
+      </p>
 
       <h2>Menores</h2>
-      <p>La herramienta está pensada para un público general y adulto interesado en evaluar una compra de vehículo. No está dirigida específicamente a menores.</p>
+      <p>
+        La herramienta está pensada para un público general y adulto interesado en evaluar una compra
+        de vehículo. No está dirigida específicamente a menores.
+      </p>
 
       <h2>Contacto</h2>
-      <p>Para consultas relacionadas con esta política de privacidad, puede usarse el contacto del desarrollador indicado en la ficha de Google Play.</p>
+      <p>
+        Para consultas relacionadas con esta política de privacidad, puede usarse el contacto del
+        desarrollador indicado en la ficha de Google Play.
+      </p>
 
-      <p>Última actualización: 24 de mayo de 2026.</p>
-      <p><a href="index.html">Volver a la herramienta</a></p>
+      <p class="privacy-page__updated">Última actualización: 24 de mayo de 2026.</p>
     </section>
   </main>
 </body>

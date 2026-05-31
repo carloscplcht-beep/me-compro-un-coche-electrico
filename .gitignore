@@ -1,0 +1,10 @@
+.dev.vars
+.env
+*.local
+service-account.json
+*service-account*.json
+*.jks
+*.keystore
+keystore.properties
+node_modules/
+.wrangler/
