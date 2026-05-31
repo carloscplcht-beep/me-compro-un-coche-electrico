@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Herramienta para analizar si la compra de un vehículo eléctrico es viable según tu uso, tu infraestructura de carga y el impacto económico esperado.">
   <!-- En un hosting estático como GitHub Pages la CSP razonable se puede reforzar por meta; frame-ancestors requiere cabecera HTTP. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://mapa-reve-proxy.carlospenalaguna.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://a.tile.openstreetmap.org https://b.tile.openstreetmap.org https://c.tile.openstreetmap.org; font-src 'self' data:; connect-src 'self' https://mapa-reve-proxy.carlospenalaguna.workers.dev; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests">
   <meta name="theme-color" content="#0f766e">
   <title>¿Me compro un vehículo eléctrico?</title>
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -165,6 +166,8 @@
         <label class="recharge-search__field">
           <span>Ubicación</span>
           <input id="recharge-location-input" type="text" autocomplete="off" list="recharge-city-suggestions" placeholder="Ej. Madrid o 40.4168, -3.7038">
+          <small>Busca por localidad o introduce coordenadas. La geolocalizacion es opcional.</small>
+          <div id="recharge-location-suggestions" class="recharge-suggestions" hidden></div>
           <datalist id="recharge-city-suggestions">
             <option value="Madrid"></option>
             <option value="Barcelona"></option>
@@ -173,6 +176,9 @@
             <option value="Zaragoza"></option>
             <option value="Málaga"></option>
             <option value="Bilbao"></option>
+            <option value="Ciudad Real"></option>
+            <option value="Cordoba"></option>
+            <option value="Toledo"></option>
             <option value="A Coruña"></option>
           </datalist>
         </label>
@@ -183,10 +189,13 @@
             <option value="10" selected>10 km</option>
             <option value="25">25 km</option>
             <option value="50">50 km</option>
+            <option value="100">100 km</option>
           </select>
+          <small id="recharge-radius-help">Elige el alcance de la consulta.</small>
         </label>
         <div class="recharge-search__actions">
           <button type="button" id="recharge-geolocate-button" class="button button--secondary">Usar mi ubicación</button>
+          <button type="button" id="recharge-reset-button" class="button button--secondary">Restablecer busqueda</button>
           <button type="submit" class="button button--primary">Buscar recarga</button>
         </div>
       </form>
@@ -199,27 +208,33 @@
         <article class="recharge-summary-card">
           <span>Puntos encontrados</span>
           <strong id="recharge-count">--</strong>
+          <small id="recharge-count-detail">Sin busqueda activa</small>
         </article>
         <article class="recharge-summary-card">
-          <span>Punto más cercano</span>
-          <strong id="recharge-nearest">--</strong>
+          <span>Mas cercano</span>
+          <strong id="recharge-nearest-name" title="">--</strong>
+          <small id="recharge-nearest-meta">Distancia y potencia no disponibles</small>
+          <small id="recharge-nearest-address">--</small>
         </article>
         <article class="recharge-summary-card">
-          <span>Potencia máxima</span>
-          <strong id="recharge-power">--</strong>
+          <span>Carga mas rapida detectada</span>
+          <strong id="recharge-fastest-power">--</strong>
+          <small id="recharge-fastest-name" title="">--</small>
+          <small id="recharge-fastest-meta">Punto y distancia no disponibles</small>
         </article>
         <article class="recharge-summary-card">
           <span>Cobertura</span>
           <strong id="recharge-coverage">--</strong>
+          <small id="recharge-coverage-copy">Sin busqueda activa</small>
         </article>
       </div>
 
+      <p class="recharge-summary-note">Los indicadores pueden corresponder a estaciones diferentes.</p>
+
       <div class="recharge-map-layout">
-        <div id="recharge-map" class="recharge-map" aria-label="Mapa esquemático de puntos de recarga">
-          <div class="recharge-map__grid" aria-hidden="true"></div>
+        <div id="recharge-map" class="recharge-map" aria-label="Mapa de puntos de recarga cercanos">
           <div class="recharge-map__center" aria-label="Centro de búsqueda"></div>
-          <div id="recharge-map-points" class="recharge-map__points"></div>
-          <p id="recharge-map-empty" class="recharge-map__empty">Sin puntos para mostrar todavía.</p>
+          <p id="recharge-map-empty" class="recharge-map__empty">Busca una localidad o usa tu ubicacion para ver puntos de recarga cercanos.</p>
         </div>
         <div class="recharge-results-panel">
           <div class="recharge-results-panel__head">
@@ -227,6 +242,7 @@
             <span id="recharge-updated">Última consulta: --</span>
           </div>
           <div id="recharge-results-list" class="recharge-results-list"></div>
+          <button type="button" id="recharge-show-more-button" class="button button--ghost recharge-show-more" hidden>Ver mÃ¡s puntos</button>
         </div>
       </div>
     </section>
@@ -277,6 +293,7 @@
 
   <script src="script.js"></script>
   <script src="app-fixes.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script src="reve-map.js"></script>
 </body>
 </html>
