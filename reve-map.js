@@ -65,6 +65,33 @@
     city("Melilla", "Melilla", "Melilla", 35.2923, -2.9381, ["52001"]),
   ];
 
+  const FALLBACK_LOCALITIES = [
+    city("Miguelturra", "Ciudad Real", "Castilla-La Mancha", 38.9643, -3.8907, ["13170"]),
+    city("Puertollano", "Ciudad Real", "Castilla-La Mancha", 38.6871, -4.1124, ["13500"]),
+    city("Tomelloso", "Ciudad Real", "Castilla-La Mancha", 39.1579, -3.0216, ["13700"]),
+    city("Alcazar de San Juan", "Ciudad Real", "Castilla-La Mancha", 39.3901, -3.2083, ["13600"], ["Alcázar de San Juan"]),
+    city("Valdepenas", "Ciudad Real", "Castilla-La Mancha", 38.7621, -3.3848, ["13300"], ["Valdepeñas"]),
+    city("Manzanares", "Ciudad Real", "Castilla-La Mancha", 38.9992, -3.3699, ["13200"]),
+    city("Daimiel", "Ciudad Real", "Castilla-La Mancha", 39.0701, -3.6149, ["13250"]),
+    city("Almagro", "Ciudad Real", "Castilla-La Mancha", 38.8894, -3.7113, ["13270"]),
+    city("Campo de Criptana", "Ciudad Real", "Castilla-La Mancha", 39.4044, -3.1248, ["13610"]),
+    city("Socuellamos", "Ciudad Real", "Castilla-La Mancha", 39.2856, -2.7928, ["13630"], ["Socuéllamos"]),
+    city("La Solana", "Ciudad Real", "Castilla-La Mancha", 38.9448, -3.2381, ["13240"]),
+    city("Bolanos de Calatrava", "Ciudad Real", "Castilla-La Mancha", 38.9068, -3.6635, ["13260"], ["Bolaños de Calatrava"]),
+    city("Talavera de la Reina", "Toledo", "Castilla-La Mancha", 39.9635, -4.8308, ["45600"]),
+    city("Illescas", "Toledo", "Castilla-La Mancha", 40.1244, -3.8477, ["45200"]),
+    city("Sesena", "Toledo", "Castilla-La Mancha", 40.1048, -3.6979, ["45223"], ["Seseña"]),
+    city("Torrijos", "Toledo", "Castilla-La Mancha", 39.9811, -4.2835, ["45500"]),
+    city("Hellin", "Albacete", "Castilla-La Mancha", 38.5106, -1.7008, ["02400"], ["Hellín"]),
+    city("Almansa", "Albacete", "Castilla-La Mancha", 38.8692, -1.0979, ["02640"]),
+    city("Villarrobledo", "Albacete", "Castilla-La Mancha", 39.2699, -2.6012, ["02600"]),
+    city("La Roda", "Albacete", "Castilla-La Mancha", 39.2074, -2.1574, ["02630"]),
+    city("Tarancon", "Cuenca", "Castilla-La Mancha", 40.0085, -3.0073, ["16400"], ["Tarancón"]),
+    city("Motilla del Palancar", "Cuenca", "Castilla-La Mancha", 39.5663, -1.8825, ["16200"]),
+    city("Azuqueca de Henares", "Guadalajara", "Castilla-La Mancha", 40.5657, -3.2676, ["19200"]),
+    city("Alovera", "Guadalajara", "Castilla-La Mancha", 40.5947, -3.2446, ["19208"]),
+  ];
+
   const dom = {};
   let map = null;
   let stationLayer = null;
@@ -182,7 +209,8 @@
 
   async function handleSearchSubmit(event) {
     event.preventDefault();
-    const resolved = resolveLocationInput(dom.input.value.trim());
+    const query = dom.input.value.trim();
+    const resolved = resolveLocationInput(query);
     if (resolved.status === "empty") {
       setStatus("Introduce una localidad, un codigo postal reconocido o coordenadas tipo 40.4168, -3.7038.", "error");
       return;
@@ -193,14 +221,66 @@
       return;
     }
     if (resolved.status === "not_found") {
-      renderSuggestions([], { force: true });
-      setStatus("No encuentro esa localidad. Prueba con el nombre completo, provincia o usa tu ubicacion.", "error");
+      await handleUnknownLocationSearch(query);
       return;
     }
 
     hideSuggestions();
     dom.input.value = resolved.center.label;
     await searchNearby(resolved.center);
+  }
+
+  async function handleUnknownLocationSearch(query) {
+    hideSuggestions();
+    setLoading(true, "Buscando en ubicaciones REVE disponibles...");
+
+    let reveMatches = [];
+    try {
+      reveMatches = await searchReveLocationMatches(query);
+    } catch (error) {
+      if (error.name === "AbortError") return;
+      logSafeDiagnostics("busqueda_reve_fallida", { query, message: error.message });
+    } finally {
+      setLoading(false);
+    }
+
+    if (reveMatches.length === 1) {
+      const match = reveMatches[0];
+      dom.input.value = match.label;
+      await searchNearby(toCenter(match), {
+        notice: "Ubicacion aproximada encontrada a partir de datos REVE disponibles.",
+      });
+      return;
+    }
+
+    if (reveMatches.length > 1) {
+      renderSuggestions(reveMatches, { force: true });
+      setStatus("He encontrado varias coincidencias en ubicaciones REVE disponibles. Elige una sugerencia para consultar la zona.", "success");
+      return;
+    }
+
+    setStatus("Intentando localizar la zona...", "loading");
+    const fallbackMatches = findFallbackLocalityMatches(query);
+    if (fallbackMatches.length === 1) {
+      const match = fallbackMatches[0];
+      dom.input.value = match.label;
+      await searchNearby(toCenter(match), {
+        notice: "Localidad localizada de forma aproximada.",
+      });
+      return;
+    }
+
+    if (fallbackMatches.length > 1) {
+      renderSuggestions(fallbackMatches, { force: true });
+      setStatus("He localizado varias posibles zonas. Elige una sugerencia para consultar ubicaciones de recarga disponibles.", "success");
+      return;
+    }
+
+    renderSuggestions([], {
+      force: true,
+      emptyCopy: "No he podido localizar esa localidad. Prueba con el nombre completo, una localidad cercana o usa tu ubicacion.",
+    });
+    setStatus("No he podido localizar esa localidad. Prueba con el nombre completo, una localidad cercana o usa tu ubicacion.", "error");
   }
 
   async function handleSearchCurrentMapArea() {
@@ -227,7 +307,7 @@
     dom.suggestions.innerHTML = "";
     if (matches.length === 0) {
       if (options.force) {
-        dom.suggestions.innerHTML = `<p>No encuentro esa localidad. Prueba con el nombre completo, provincia o usa tu ubicacion.</p>`;
+        dom.suggestions.innerHTML = `<p>${escapeHtml(options.emptyCopy || "No he podido localizar esa localidad. Prueba con el nombre completo, una localidad cercana o usa tu ubicacion.")}</p>`;
         dom.suggestions.hidden = false;
       } else {
         hideSuggestions();
@@ -279,7 +359,7 @@
     );
   }
 
-  async function searchNearby(center) {
+  async function searchNearby(center, options = {}) {
     const radiusKm = Number(dom.radius.value);
     const currentSearch = ++searchSequence;
     activeController?.abort();
@@ -310,7 +390,7 @@
       }
 
       lastLocations = Array.isArray(payload?.data) ? payload.data : [];
-      renderRechargeResults(lastLocations, center, radiusKm, payload?.meta);
+      renderRechargeResults(lastLocations, center, radiusKm, payload?.meta, options.notice || "");
     } catch (error) {
       if (error.name === "AbortError") return;
       if (currentSearch !== searchSequence) return;
@@ -320,7 +400,7 @@
     }
   }
 
-  function renderRechargeResults(locations, center, radiusKm, meta) {
+  function renderRechargeResults(locations, center, radiusKm, meta, notice = "") {
     setLoading(false);
     ensureMap();
 
@@ -334,7 +414,7 @@
       dom.coverageCopy.textContent = "pocas ubicaciones disponibles en el radio seleccionado";
       dom.updated.textContent = getDatasetUpdatedText(meta);
       setConnectorsSummary([]);
-      setStatus(`No se han encontrado ubicaciones en esta consulta para ${radiusKm} km alrededor de ${center.label}. Prueba a ampliar el radio o buscar otra ubicacion. ${getDataLimitationCopy(meta)}`, "empty");
+      setStatus(`${notice ? `${notice} ` : ""}No se han encontrado ubicaciones en esta consulta para ${radiusKm} km alrededor de ${center.label}. Prueba a ampliar el radio o mover el mapa. ${getDataLimitationCopy(meta)}`, "empty");
       return;
     }
 
@@ -381,7 +461,7 @@
       mostrados_lista: Math.min(visibleCount, locations.length),
     });
 
-    setStatus(`Se han encontrado ${locations.length} ubicaciones disponibles en esta consulta para un radio de ${radiusKm} km alrededor de ${center.label}. ${getDataLimitationCopy(meta)}`, "success");
+    setStatus(`${notice ? `${notice} ` : ""}Se han encontrado ${locations.length} ubicaciones disponibles en esta consulta para un radio de ${radiusKm} km alrededor de ${center.label}. ${getDataLimitationCopy(meta)}`, "success");
 
     if (radiusKm === 100) {
       dom.status.textContent += " Radio amplio: util para valorar rutas y desplazamientos cercanos, no solo carga cotidiana.";
@@ -593,6 +673,53 @@
     return scored
       .sort((a, b) => b.score - a.score || a.item.label.localeCompare(b.item.label, "es"))
       .map((entry) => entry.item);
+  }
+
+  function findFallbackLocalityMatches(value) {
+    return scoreLocalityMatches(FALLBACK_LOCALITIES, value);
+  }
+
+  function scoreLocalityMatches(items, value) {
+    const normalized = normalizeText(value);
+    if (normalized.length < 2) return [];
+
+    const scored = items.map((item) => {
+      const terms = [item.label, item.province, item.region, ...item.aliases, ...item.postalCodes].map(normalizeText);
+      let score = 0;
+      if (terms.some((term) => term === normalized)) score = 100;
+      else if (terms.some((term) => term.startsWith(normalized))) score = 70;
+      else if (terms.some((term) => term.includes(normalized))) score = 45;
+      return { item: { ...item, source: "fallback" }, score };
+    }).filter((entry) => entry.score > 0);
+
+    return scored
+      .sort((a, b) => b.score - a.score || a.item.label.localeCompare(b.item.label, "es"))
+      .map((entry) => entry.item);
+  }
+
+  async function searchReveLocationMatches(query) {
+    const url = new URL(`${PROXY_BASE_URL}/locations/search`);
+    url.searchParams.set("q", query);
+    url.searchParams.set("limit", "8");
+
+    const response = await fetch(url.toString(), { method: "GET" });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.error?.message || "No se ha podido buscar en la cache REVE.");
+
+    return Array.isArray(payload?.data)
+      ? payload.data
+        .filter((match) => Number.isFinite(Number(match?.coordinates?.lat)) && Number.isFinite(Number(match?.coordinates?.lon)))
+        .map((match) => ({
+          label: match.city || match.name || "Ubicacion REVE",
+          province: "cache REVE",
+          region: [match.address, match.name].filter(Boolean).join(" - ") || "coincidencia disponible",
+          lat: Number(match.coordinates.lat),
+          lon: Number(match.coordinates.lon),
+          aliases: [],
+          postalCodes: [],
+          source: "reve",
+        }))
+      : [];
   }
 
   function toCenter(item) {
