@@ -2282,6 +2282,32 @@ button {
     height: 154px;
   }
 
+  .status-strip {
+    position: static;
+    z-index: auto;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .status-strip__main {
+    flex: 0 1 auto;
+    width: 100%;
+  }
+
+  .status-strip__actions {
+    width: 100%;
+  }
+
+  .status-strip__note {
+    padding: 9px 10px;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
   .status-strip,
   .panel__head,
   .question-group__head,
