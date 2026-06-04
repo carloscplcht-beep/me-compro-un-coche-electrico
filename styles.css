@@ -366,6 +366,7 @@ button {
   top: 14px;
   z-index: 10;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -378,7 +379,18 @@ button {
 }
 
 .status-strip__main {
-  flex: 1;
+  flex: 1 1 320px;
+}
+
+.status-strip__note {
+  flex: 1 0 100%;
+  margin: -4px 0 0;
+  padding: 10px 12px;
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  border-radius: 16px;
+  background: rgba(15, 118, 110, 0.07);
 }
 
 .status-strip__main strong {
@@ -638,6 +650,18 @@ button {
   border-top: 1px solid rgba(16, 33, 38, 0.08);
 }
 
+.question-group__navigation .button[data-step-direction="next"] {
+  color: #f8fcfd;
+  background: linear-gradient(135deg, var(--teal), var(--cyan));
+  box-shadow: 0 16px 28px rgba(15, 118, 110, 0.2);
+}
+
+.question-group__navigation .button[data-step-direction="previous"] {
+  color: var(--teal-strong);
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  background: rgba(255, 255, 255, 0.9);
+}
+
 .question-group__step {
   margin: 0;
   text-align: center;
@@ -692,6 +716,61 @@ button {
   margin: 0;
   font-size: 1rem;
   line-height: 1.45;
+}
+
+.field__title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.field-help-toggle {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  color: var(--teal-strong);
+  font-weight: 800;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 50%;
+  background: rgba(237, 253, 246, 0.9);
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.08);
+}
+
+.field-help-toggle:hover,
+.field-help-toggle:focus-visible {
+  outline: none;
+  border-color: rgba(15, 118, 110, 0.34);
+  transform: translateY(-1px);
+}
+
+.field-help {
+  margin: 0 0 14px 48px;
+  padding: 14px;
+  color: var(--text-soft);
+  line-height: 1.6;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  background: rgba(237, 253, 246, 0.74);
+}
+
+.field-help p {
+  margin: 0;
+}
+
+.field-help__close {
+  margin-top: 10px;
+  padding: 8px 10px;
+  color: var(--teal-strong);
+  font-weight: 800;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.is-hidden-field {
+  display: none;
 }
 
 .field__hint {
@@ -1735,6 +1814,86 @@ button {
   font-family: var(--font-head);
 }
 
+.economic-breakdown {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(16, 33, 38, 0.08);
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.economic-breakdown__head h5 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.economic-breakdown__head p,
+.economic-breakdown__note {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.economic-breakdown__grid,
+.aid-scenario {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.economic-breakdown__grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.breakdown-item,
+.aid-scenario {
+  padding: 13px;
+  border-radius: 16px;
+  border: 1px solid rgba(16, 33, 38, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.breakdown-item span,
+.aid-scenario span {
+  display: block;
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.breakdown-item strong,
+.aid-scenario strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 1.15rem;
+}
+
+.breakdown-item small,
+.aid-scenario p {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.aid-scenario {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.aid-scenario p {
+  grid-column: 1 / -1;
+}
+
+.aid-scenario__warning {
+  padding: 10px 12px;
+  border-radius: 14px;
+  color: #8a3b08 !important;
+  background: rgba(251, 191, 36, 0.16);
+}
+
 .comparison-chart {
   display: grid;
   gap: 16px;
@@ -2083,6 +2242,15 @@ button {
 }
 
 @media (max-width: 760px) {
+  .field-help {
+    margin-left: 0;
+  }
+
+  .economic-breakdown__grid,
+  .aid-scenario {
+    grid-template-columns: 1fr;
+  }
+
   .hero,
   .app-shell,
   .page-footer {

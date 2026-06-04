@@ -34,7 +34,7 @@
     const paragraphs = [
       buildPrimaryCaseSummaryPatched(verdict, caseFactors),
       `En el día a día, ${buildOperationalLead(answers)} y ${buildOperationalRisk(answers)}. Eso deja una comodidad operativa ${getComfortAdjectivePatched(answers)} para convivir con un eléctrico como coche ${answers.mainVehicle === "si" ? "principal" : "secundario"}.`,
-      `En dinero, pasarías de unos ${formatCurrency(economic.currentAnnualCost)} al año a ${formatCurrency(economic.estimatedElectricAnnualCost)} en el escenario eléctrico. ${buildAmortizationSentence(economic)}`,
+      buildEconomicNarrative(economic),
       `Visto en conjunto, ${buildFinalConclusion(verdict, scoring, coherenceWarnings.length > 0)}.`,
     ];
 

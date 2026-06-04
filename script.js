@@ -57,10 +57,24 @@ const FORM_SECTIONS = [
     subtitle: "Identificamos la comodidad real para recargar el vehículo.",
     questions: [
       { id: "ownGarage", number: 5, type: "choice", label: "¿Dispones de plaza de garaje propia?", options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }] },
-      { id: "canInstallCharger", number: 6, type: "choice", label: "¿Puedes instalar un punto de carga en tu plaza?", options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }, { value: "no-se", label: "No lo sé" }] },
+      {
+        id: "canInstallCharger",
+        number: 6,
+        type: "choice",
+        label: "¿Puedes instalar un punto de carga en tu plaza?",
+        help: "En garajes comunitarios, la instalación de un punto de recarga para uso privado suele requerir comunicación previa a la comunidad y asumir el coste de instalación y consumo. Comprueba siempre las condiciones técnicas de tu garaje y la normativa aplicable.",
+        options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }, { value: "no-se", label: "No lo sé" }]
+      },
       { id: "nightCharging", number: 7, type: "choice", label: "¿Podrías cargar el coche de forma habitual por la noche?", options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }] },
       { id: "workCharging", number: 8, type: "choice", label: "¿Tienes posibilidad de cargar en el trabajo?", options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }] },
-      { id: "publicChargingWillingness", number: 9, type: "choice", label: "Si no tuvieras carga propia, ¿estarías dispuesto a usar cargadores públicos de forma regular?", options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }] },
+      {
+        id: "publicChargingWillingness",
+        number: 9,
+        type: "choice",
+        label: "Si no tuvieras carga propia, ¿estarías dispuesto a usar cargadores públicos de forma regular?",
+        help: "Algunos operadores ofrecen tarifas o suscripciones que pueden reducir el coste de la recarga pública o rápida. Usa en el cálculo un precio medio realista según el uso que esperas hacer.",
+        options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }]
+      },
     ],
   },
   {
@@ -103,8 +117,81 @@ const FORM_SECTIONS = [
     subtitle: "Comparamos presupuesto, precio de compra y amortización esperada.",
     questions: [
       { id: "maxBudget", number: 16, type: "number", label: "¿Qué presupuesto máximo tienes para comprar el vehículo?", placeholder: "Ej. 32.000", unit: "€", min: 1, format: "currency" },
-      { id: "evPrice", number: 17, type: "number", label: "¿Cuál es el precio aproximado del vehículo eléctrico que estás valorando?", placeholder: "Ej. 36.500", unit: "€", min: 1, format: "currency" },
-      { id: "iceAlternativePrice", number: 18, type: "number", label: "¿Cuál sería el precio de un coche equivalente de combustión que considerarías como alternativa?", placeholder: "Ej. 28.000", unit: "€", min: 1, format: "currency" },
+      {
+        id: "evPrice",
+        number: 17,
+        type: "number",
+        label: "¿Cuál es el precio aproximado del vehículo eléctrico que estás valorando?",
+        placeholder: "Ej. 36.500",
+        unit: "€",
+        min: 1,
+        format: "currency",
+        help: "Introduce el precio aproximado de compra antes de ayudas. Si quieres considerar ayudas públicas, usa también la pregunta específica sobre ayudas. Si no sabes el precio, consulta una fuente externa de precios de vehículos y vuelve a introducir una cifra aproximada."
+      },
+      {
+        id: "iceAlternativePrice",
+        number: 18,
+        type: "number",
+        label: "¿Cuál sería el precio de un coche equivalente de combustión que considerarías como alternativa?",
+        placeholder: "Ej. 28.000",
+        unit: "€",
+        min: 1,
+        format: "currency",
+        help: "Introduce el precio aproximado de una alternativa térmica razonablemente comparable en tamaño, uso y equipamiento. No es necesario que sea exacto; la herramienta mostrará una estimación orientativa. Si no sabes el precio, consulta una fuente externa de precios de vehículos y vuelve a introducir una cifra aproximada."
+      },
+      {
+        id: "publicAidConsidered",
+        number: "18A",
+        type: "choice",
+        label: "¿Estás considerando alguna ayuda pública o incentivo para la compra?",
+        help: "Las ayudas públicas pueden variar por convocatoria y territorio. En muchos casos el comprador debe adelantar el importe total y recibir la ayuda más adelante. Usa un importe prudente y comprueba siempre las condiciones oficiales vigentes.",
+        options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }, { value: "no-se", label: "No lo sé" }]
+      },
+      {
+        id: "publicAidAmount",
+        number: "18B",
+        type: "number",
+        label: "Importe estimado de la ayuda",
+        placeholder: "Ej. 4.500",
+        unit: "€",
+        min: 0,
+        format: "currency",
+        optional: true,
+        dependsOn: { id: "publicAidConsidered", value: "si" }
+      },
+      {
+        id: "aidAdvanceCapacity",
+        number: "18C",
+        type: "choice",
+        label: "¿Puedes asumir el desembolso inicial hasta recibir la ayuda?",
+        optional: true,
+        dependsOn: { id: "publicAidConsidered", value: "si" },
+        options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }, { value: "no-se", label: "No lo sé" }]
+      },
+      {
+        id: "currentMaintenanceAnnual",
+        number: "18D",
+        type: "number",
+        label: "¿Cuánto pagas aproximadamente al año en mantenimiento del coche actual?",
+        placeholder: "Ej. 450",
+        unit: "€/año",
+        min: 0,
+        format: "currency",
+        optional: true,
+        help: "Incluye revisiones, aceite, filtros, pequeñas reparaciones habituales u otros gastos de mantenimiento ordinario. No incluyas seguro, impuestos, neumáticos ni averías extraordinarias si no quieres distorsionar el cálculo."
+      },
+      {
+        id: "evMaintenanceAnnual",
+        number: "18E",
+        type: "number",
+        label: "¿Cuánto estimas que pagarías al año en mantenimiento del vehículo eléctrico?",
+        placeholder: "Ej. 250",
+        unit: "€/año",
+        min: 0,
+        format: "currency",
+        optional: true,
+        help: "Si no lo sabes, puedes dejarlo en blanco. El mantenimiento de un eléctrico suele ser distinto al de un vehículo de combustión, pero depende del modelo, garantía, uso y taller."
+      },
       { id: "willingPayMoreUpfront", number: 19, type: "choice", label: "¿Aceptarías pagar más al inicio si a medio plazo reduces claramente tu coste de uso?", options: [{ value: "si", label: "Sí" }, { value: "no", label: "No" }] },
     ],
   },
@@ -120,6 +207,7 @@ const FORM_SECTIONS = [
 ];
 
 const QUESTIONS = FORM_SECTIONS.flatMap((section) => section.questions);
+const REQUIRED_QUESTIONS = QUESTIONS.filter((question) => !question.optional);
 let currentSectionIndex = 0;
 
 const dom = {
@@ -146,6 +234,7 @@ function init() {
   restoreSettings();
   bindEvents();
   restoreDraft();
+  updateConditionalQuestions({ clearHidden: false });
   updateProgress();
   initRevealObserver();
 }
@@ -169,7 +258,7 @@ function renderSections() {
       <span class="section-chip__index">${index + 1}</span>
       <span class="section-chip__meta">
         <span class="section-chip__title">${section.title}</span>
-        <span class="section-chip__count" id="nav-count-${section.id}">0 / ${section.questions.length}</span>
+        <span class="section-chip__count" id="nav-count-${section.id}">0 / ${getRequiredQuestions(section).length}</span>
       </span>
     </button>
   `).join("");
@@ -191,7 +280,7 @@ function renderSections() {
           <h3 class="question-group__title">${section.title}</h3>
           <p class="question-group__subtitle">${section.subtitle}</p>
         </div>
-        <div class="question-group__badge" id="badge-${section.id}">0 / ${section.questions.length}</div>
+        <div class="question-group__badge" id="badge-${section.id}">0 / ${getRequiredQuestions(section).length}</div>
       </div>
       <div class="question-list">
         ${section.questions.map(renderQuestion).join("")}
@@ -233,14 +322,18 @@ function renderSectionNavigation(index) {
 function renderQuestion(question) {
   if (question.type === "number") {
     return `
-      <div class="field" data-field="${question.id}">
+      <div class="field ${question.dependsOn ? "is-conditional-field" : ""}" data-field="${question.id}" ${renderDependencyAttributes(question)}>
         <div class="field__header">
           <span class="field__index">${pad(question.number)}</span>
           <div>
-            <p class="field__title">${question.label}</p>
-            <p class="field__hint">Dato obligatorio. Se admiten decimales cuando tenga sentido.</p>
+            <div class="field__title-row">
+              <p class="field__title">${question.label}</p>
+              ${renderHelpButton(question)}
+            </div>
+            <p class="field__hint">${question.optional ? "Dato opcional. Puedes dejarlo en blanco si no lo conoces." : "Dato obligatorio. Se admiten decimales con coma o punto cuando tenga sentido."}</p>
           </div>
         </div>
+        ${renderHelpPanel(question)}
         <div class="input-shell">
           <input class="field__control" type="text" inputmode="decimal" autocomplete="off" id="${question.id}" name="${question.id}" placeholder="${question.placeholder}" data-question-id="${question.id}" data-format="${question.format}">
           <span class="field__unit">${question.unit}</span>
@@ -252,14 +345,18 @@ function renderQuestion(question) {
 
   if (question.type === "select") {
     return `
-      <div class="field" data-field="${question.id}">
+      <div class="field ${question.dependsOn ? "is-conditional-field" : ""}" data-field="${question.id}" ${renderDependencyAttributes(question)}>
         <div class="field__header">
           <span class="field__index">${pad(question.number)}</span>
           <div>
-            <p class="field__title">${question.label}</p>
-            <p class="field__hint">Selecciona una única opción.</p>
+            <div class="field__title-row">
+              <p class="field__title">${question.label}</p>
+              ${renderHelpButton(question)}
+            </div>
+            <p class="field__hint">${question.optional ? "Dato opcional para afinar el escenario." : "Selecciona una única opción."}</p>
           </div>
         </div>
+        ${renderHelpPanel(question)}
         <div class="select-shell">
           <select class="field__select" id="${question.id}" name="${question.id}" data-question-id="${question.id}">
             <option value="">${question.placeholder}</option>
@@ -272,14 +369,18 @@ function renderQuestion(question) {
   }
 
   return `
-    <fieldset class="field" data-field="${question.id}">
+    <fieldset class="field ${question.dependsOn ? "is-conditional-field" : ""}" data-field="${question.id}" ${renderDependencyAttributes(question)}>
       <div class="field__header">
         <span class="field__index">${pad(question.number)}</span>
         <div>
-          <p class="field__title">${question.label}</p>
-          <p class="field__hint">Selecciona la respuesta que mejor describa tu situación.</p>
+          <div class="field__title-row">
+            <p class="field__title">${question.label}</p>
+            ${renderHelpButton(question)}
+          </div>
+          <p class="field__hint">${question.optional ? "Dato opcional para mostrar un escenario adicional." : "Selecciona la respuesta que mejor describa tu situación."}</p>
         </div>
       </div>
+      ${renderHelpPanel(question)}
       <div class="choice-grid">
         ${question.options.map((option) => `
           <label>
@@ -293,6 +394,37 @@ function renderQuestion(question) {
   `;
 }
 
+function renderDependencyAttributes(question) {
+  if (!question.dependsOn) return "";
+  return `data-depends-on="${question.dependsOn.id}" data-depends-value="${question.dependsOn.value}" hidden`;
+}
+
+function renderHelpButton(question) {
+  if (!question.help) return "";
+  return `
+    <button
+      type="button"
+      class="field-help-toggle"
+      aria-label="Mostrar ayuda sobre: ${question.label}"
+      aria-controls="help-${question.id}"
+      aria-expanded="false"
+      data-help-toggle="${question.id}"
+    >
+      ?
+    </button>
+  `;
+}
+
+function renderHelpPanel(question) {
+  if (!question.help) return "";
+  return `
+    <div class="field-help" id="help-${question.id}" hidden>
+      <p>${question.help}</p>
+      <button type="button" class="field-help__close" data-help-close="${question.id}">Cerrar</button>
+    </div>
+  `;
+}
+
 function bindEvents() {
   dom.form.addEventListener("submit", handleSubmit);
   dom.printButton.addEventListener("click", () => window.print());
@@ -301,6 +433,7 @@ function bindEvents() {
   dom.resetResultsButton.addEventListener("click", resetAnalysis);
   dom.sectionNav.addEventListener("click", handleTabNavigation);
   dom.groups.addEventListener("click", handleSequentialNavigation);
+  dom.groups.addEventListener("click", handleHelpInteraction);
 
   QUESTIONS.forEach((question) => {
     if (question.type === "number") {
@@ -315,6 +448,7 @@ function bindEvents() {
         // Evita recalcular con un valor antiguo si el usuario edita y envía sin perder el foco.
         delete input.dataset.numericValue;
         clearFieldState(question.id);
+        updateConditionalQuestions();
         updateProgress();
         persistDraftIfEnabled();
       });
@@ -325,6 +459,7 @@ function bindEvents() {
       const select = getInputElement(question.id);
       select.addEventListener("change", () => {
         validateField(question.id);
+        updateConditionalQuestions();
         updateProgress();
         persistDraftIfEnabled();
       });
@@ -334,6 +469,7 @@ function bindEvents() {
     document.querySelectorAll(`[name="${question.id}"]`).forEach((input) => {
       input.addEventListener("change", () => {
         validateField(question.id);
+        updateConditionalQuestions();
         updateProgress();
         persistDraftIfEnabled();
       });
@@ -354,7 +490,109 @@ function handleSequentialNavigation(event) {
 
   const direction = trigger.dataset.stepDirection === "next" ? 1 : -1;
   const sectionIndex = Number(trigger.dataset.sectionIndex);
+
+  if (direction > 0 && !validateSection(sectionIndex)) {
+    return;
+  }
+
+  dom.formWarning.classList.add("is-hidden");
   setActiveSection(sectionIndex + direction);
+}
+
+function handleHelpInteraction(event) {
+  const toggle = event.target.closest("[data-help-toggle]");
+  if (toggle) {
+    const helpId = toggle.dataset.helpToggle;
+    const panel = document.querySelector(`#help-${helpId}`);
+    if (!panel) return;
+
+    const willOpen = panel.hidden;
+    panel.hidden = !willOpen;
+    toggle.setAttribute("aria-expanded", String(willOpen));
+    return;
+  }
+
+  const close = event.target.closest("[data-help-close]");
+  if (close) {
+    const helpId = close.dataset.helpClose;
+    const panel = document.querySelector(`#help-${helpId}`);
+    const toggleButton = document.querySelector(`[data-help-toggle="${helpId}"]`);
+    if (panel) panel.hidden = true;
+    if (toggleButton) {
+      toggleButton.setAttribute("aria-expanded", "false");
+      toggleButton.focus();
+    }
+  }
+}
+
+function validateSection(sectionIndex) {
+  const section = FORM_SECTIONS[sectionIndex];
+  const invalidQuestion = section.questions.find((question) => shouldValidateQuestion(question) && !validateField(question.id));
+  if (!invalidQuestion) return true;
+
+  const field = document.querySelector(`[data-field="${invalidQuestion.id}"]`);
+  if (field) {
+    field.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  dom.formWarning.textContent = "Completa o revisa los campos obligatorios de este bloque antes de continuar.";
+  dom.formWarning.classList.remove("is-hidden");
+  return false;
+}
+
+function getRequiredQuestions(section) {
+  return section.questions.filter((question) => !question.optional);
+}
+
+function shouldValidateQuestion(question) {
+  if (!question || !isQuestionVisible(question)) return false;
+  if (!question.optional) return true;
+
+  const value = getFieldValue(question);
+  return value !== "" && value !== null && typeof value !== "undefined";
+}
+
+function isQuestionVisible(question) {
+  if (!question?.dependsOn) return true;
+  return getFieldValue(QUESTIONS.find((item) => item.id === question.dependsOn.id)) === question.dependsOn.value;
+}
+
+function updateConditionalQuestions(options = {}) {
+  const { clearHidden = true } = options;
+
+  QUESTIONS.forEach((question) => {
+    if (!question.dependsOn) return;
+
+    const field = document.querySelector(`[data-field="${question.id}"]`);
+    if (!field) return;
+
+    const isVisible = isQuestionVisible(question);
+    field.hidden = !isVisible;
+    field.classList.toggle("is-hidden-field", !isVisible);
+
+    if (!isVisible && clearHidden) {
+      clearQuestionValue(question);
+      setFieldState(question.id, "");
+    }
+  });
+}
+
+function clearQuestionValue(question) {
+  if (question.type === "number") {
+    const input = getInputElement(question.id);
+    input.value = "";
+    delete input.dataset.numericValue;
+    return;
+  }
+
+  if (question.type === "select") {
+    getInputElement(question.id).value = "";
+    return;
+  }
+
+  document.querySelectorAll(`[name="${question.id}"]`).forEach((input) => {
+    input.checked = false;
+  });
 }
 
 function setActiveSection(targetIndex, options = {}) {
@@ -435,6 +673,11 @@ function handleSubmit(event) {
 
 function validateField(questionId) {
   const question = QUESTIONS.find((item) => item.id === questionId);
+  if (!shouldValidateQuestion(question)) {
+    setFieldState(questionId, "");
+    return true;
+  }
+
   const value = getFieldValue(question);
   let message = "";
 
@@ -443,7 +686,7 @@ function validateField(questionId) {
   } else if (question.type === "number") {
     if (value < 0) {
       message = "No se permiten valores negativos.";
-    } else if (value === 0) {
+    } else if (value === 0 && question.min !== 0) {
       message = "Introduce un valor mayor que cero.";
     } else if (question.id === "currentConsumption" && (value < 0.5 || value > 20)) {
       message = "Revisa el consumo: introduce un valor razonable entre 0,5 y 20 l/100 km.";
@@ -524,13 +767,16 @@ function calculateEconomicAnalysis(answers) {
   const estimatedElectricAnnualCost = answers.kmYear * electricCostPerKmAdjusted;
   const currentMonthlyCost = currentAnnualCost / 12;
   const estimatedElectricMonthlyCost = estimatedElectricAnnualCost / 12;
-  const annualSavings = currentAnnualCost - estimatedElectricAnnualCost;
+  const energyAnnualSavings = currentAnnualCost - estimatedElectricAnnualCost;
+  const maintenance = calculateMaintenanceImpact(answers);
+  const annualSavings = energyAnnualSavings + maintenance.annualSavingsIncluded;
   const monthlySavings = annualSavings / 12;
   const savingsPerKm = currentCostPerKm - electricCostPerKmAdjusted;
   const savings3Years = annualSavings * 3;
   const savings5Years = annualSavings * 5;
   const savings10Years = annualSavings * 10;
   const initialPremium = answers.evPrice - answers.iceAlternativePrice;
+  const publicAid = calculatePublicAidScenario(answers, initialPremium, annualSavings);
 
   let amortizationYears = null;
   let amortizationMessage = "No hay amortización económica en las condiciones introducidas.";
@@ -553,6 +799,8 @@ function calculateEconomicAnalysis(answers) {
     estimatedElectricAnnualCost,
     currentMonthlyCost,
     estimatedElectricMonthlyCost,
+    energyAnnualSavings,
+    maintenance,
     annualSavings,
     monthlySavings,
     savingsPerKm,
@@ -560,9 +808,62 @@ function calculateEconomicAnalysis(answers) {
     savings5Years,
     savings10Years,
     initialPremium,
+    publicAid,
     amortizationYears,
     amortizationMessage,
     adjustments,
+  };
+}
+
+function calculateMaintenanceImpact(answers) {
+  const current = typeof answers.currentMaintenanceAnnual === "number" ? answers.currentMaintenanceAnnual : null;
+  const electric = typeof answers.evMaintenanceAnnual === "number" ? answers.evMaintenanceAnnual : null;
+  const hasCurrent = current !== null;
+  const hasElectric = electric !== null;
+  const included = hasCurrent && hasElectric;
+  const annualSavings = included ? current - electric : 0;
+
+  return {
+    current,
+    electric,
+    included,
+    incomplete: (hasCurrent || hasElectric) && !included,
+    annualSavings,
+    message: included
+      ? "Mantenimiento incluido porque se han introducido ambos importes."
+      : "No se ha incluido mantenimiento porque no se han introducido ambos importes.",
+    annualSavingsIncluded: included ? annualSavings : 0,
+  };
+}
+
+function calculatePublicAidScenario(answers, initialPremium, annualSavings) {
+  const amount = answers.publicAidConsidered === "si" && typeof answers.publicAidAmount === "number"
+    ? Math.max(0, Math.min(answers.publicAidAmount, answers.evPrice))
+    : 0;
+  const adjustedEvPrice = answers.evPrice - amount;
+  const initialPremiumWithAid = adjustedEvPrice - answers.iceAlternativePrice;
+
+  let amortizationYears = null;
+  let amortizationMessage = "No hay amortización económica con la ayuda estimada en las condiciones introducidas.";
+
+  if (amount > 0 && initialPremiumWithAid <= 0) {
+    amortizationYears = 0;
+    amortizationMessage = "Con la ayuda estimada no existiría sobrecoste frente a la alternativa térmica.";
+  } else if (amount > 0 && initialPremiumWithAid > 0 && annualSavings > 0) {
+    amortizationYears = initialPremiumWithAid / annualSavings;
+    amortizationMessage = `Con la ayuda estimada, amortización aproximada en ${formatYears(amortizationYears)}.`;
+  }
+
+  return {
+    considered: answers.publicAidConsidered,
+    amount,
+    hasAmount: amount > 0,
+    adjustedEvPrice,
+    initialPremiumWithoutAid: initialPremium,
+    initialPremiumWithAid,
+    amortizationYears,
+    amortizationMessage,
+    liquidityWarning: answers.publicAidConsidered === "si" && answers.aidAdvanceCapacity === "no",
   };
 }
 
@@ -927,6 +1228,22 @@ function buildCaseFactors(answers, economic) {
     });
   }
 
+  if (economic.maintenance.included && economic.maintenance.annualSavings > 0) {
+    positive.push({
+      score: 64,
+      title: "Mantenimiento también a favor",
+      detail: `Has introducido ${formatCurrency(economic.maintenance.annualSavings)} menos al año en mantenimiento estimado.`,
+    });
+  }
+
+  if (economic.publicAid.hasAmount && economic.publicAid.initialPremiumWithAid < economic.initialPremium) {
+    positive.push({
+      score: 66,
+      title: "La ayuda estimada mejora el escenario",
+      detail: `Como escenario orientativo, la ayuda reduciría el sobrecoste inicial hasta ${formatSignedCurrency(economic.publicAid.initialPremiumWithAid)}.`,
+    });
+  }
+
   if (answers.nightCharging === "no" && answers.workCharging === "no" && answers.publicChargingWillingness === "no") {
     negative.push({
       score: 100,
@@ -1019,6 +1336,22 @@ function buildCaseFactors(answers, economic) {
     });
   }
 
+  if (economic.maintenance.incomplete) {
+    negative.push({
+      score: 50,
+      title: "Mantenimiento incompleto",
+      detail: "Solo se ha introducido uno de los dos importes de mantenimiento, así que esa comparación no se ha incorporado al ahorro total.",
+    });
+  }
+
+  if (economic.publicAid.liquidityWarning) {
+    negative.push({
+      score: 74,
+      title: "Riesgo de liquidez por la ayuda",
+      detail: "Has indicado que no podrías adelantar cómodamente el importe hasta recibir la ayuda, y eso puede tensionar la compra.",
+    });
+  }
+
   if (answers.evPrice > answers.maxBudget * 1.2) {
     negative.push({
       score: 92,
@@ -1080,6 +1413,10 @@ function buildAdvisorView(answers, economic, verdict) {
     return "Con estos datos, yo no daría el paso hasta resolver una carga habitual real. Sin casa, sin trabajo y sin disposición a la red pública, el uso cotidiano quedaría demasiado comprometido para recomendar un eléctrico puro con tranquilidad.";
   }
 
+  if (economic.publicAid.liquidityWarning) {
+    return "Con estos datos, yo no basaría la compra en una ayuda que tengas que adelantar si eso te tensiona la liquidez. Primero confirmaría el precio final asumible sin contar con cobros futuros y, solo después, usaría la ayuda como margen adicional.";
+  }
+
   if (verdict.budgetBlock && verdict.noSavings) {
     return "Si el motivo principal es ahorrar, yo no lo compraría en este escenario. Parte por encima del presupuesto y además no recupera esa diferencia por coste de uso, así que la operación nace floja por los dos lados.";
   }
@@ -1120,6 +1457,10 @@ function buildNextStep(answers, economic, verdict) {
     return "Compara dos modelos eléctricos con autonomía real suficiente para tus viajes más exigentes.";
   }
 
+  if (economic.publicAid.liquidityWarning) {
+    return "Confirma si puedes asumir el desembolso inicial sin depender de cobrar la ayuda más adelante.";
+  }
+
   if (answers.evPrice > answers.maxBudget || economic.initialPremium > 0) {
     return "Valora si el sobrecoste inicial compensa realmente frente a la alternativa térmica.";
   }
@@ -1155,7 +1496,7 @@ function buildQualitativeAnalysis(answers, economic, scoring, verdict, coherence
   const paragraphs = [
     `El resultado sale ${verdict.label.toLowerCase()} porque ${caseFactors.positive[0].title.toLowerCase()} pesa a favor, pero ${caseFactors.negative[0].title.toLowerCase()} sigue condicionando bastante la decisión.`,
     `En el día a día, ${buildOperationalLead(answers)} y ${buildOperationalRisk(answers)}. Eso deja una comodidad operativa ${getComfortLevel(answers)} para convivir con un eléctrico como coche ${answers.mainVehicle === "si" ? "principal" : "secundario"}.`,
-    `En dinero, pasarías de unos ${formatCurrency(economic.currentAnnualCost)} al año a ${formatCurrency(economic.estimatedElectricAnnualCost)} en el escenario eléctrico. ${buildAmortizationSentence(economic)}`,
+    buildEconomicNarrative(economic),
     `Visto en conjunto, ${buildFinalConclusion(verdict, scoring, coherenceWarnings.length > 0)}.`,
   ];
 
@@ -1195,7 +1536,7 @@ function renderResults(payload) {
         </div>
       </div>
       <div class="decision-kpis">
-        ${renderDecisionKpi("Ahorro anual estimado", formatSignedCurrency(economic.annualSavings), getSavingsCaption(economic.annualSavings, 1), getValueTone(economic.annualSavings))}
+        ${renderDecisionKpi("Ahorro total anual estimado", formatSignedCurrency(economic.annualSavings), getSavingsCaption(economic.annualSavings, 1), getValueTone(economic.annualSavings))}
         ${renderDecisionKpi("Impacto a 5 años", formatSignedCurrency(economic.savings5Years), getSavingsCaption(economic.savings5Years, 5), getValueTone(economic.savings5Years))}
         ${renderDecisionKpi("Amortización estimada", amortizationHighlight.value, amortizationHighlight.caption, amortizationHighlight.tone)}
       </div>
@@ -1213,9 +1554,9 @@ function renderResults(payload) {
           </div>
 
           <div class="quick-compare-grid">
-            ${renderQuickStat("Coste actual anual", formatCurrency(economic.currentAnnualCost), "Tu coche actual", "neutral")}
-            ${renderQuickStat("Coste eléctrico anual", formatCurrency(economic.estimatedElectricAnnualCost), "Escenario estimado", "positive")}
-            ${renderQuickStat(economic.annualSavings >= 0 ? "Ahorro anual" : "Sobrecoste anual", formatSignedCurrency(economic.annualSavings), economic.annualSavings > 0 ? "Diferencia a favor del eléctrico" : "No mejora el coste de uso", getValueTone(economic.annualSavings))}
+            ${renderQuickStat("Coste energético actual anual", formatCurrency(economic.currentAnnualCost), "Tu coche actual", "neutral")}
+            ${renderQuickStat("Coste energético eléctrico anual", formatCurrency(economic.estimatedElectricAnnualCost), "Escenario estimado", "positive")}
+            ${renderQuickStat(economic.annualSavings >= 0 ? "Ahorro total anual" : "Sobrecoste total anual", formatSignedCurrency(economic.annualSavings), economic.annualSavings > 0 ? "Energía y mantenimiento si aplica" : "No mejora el coste de uso", getValueTone(economic.annualSavings))}
           </div>
 
           <div class="comparison-chart comparison-chart--enhanced">
@@ -1226,6 +1567,8 @@ function renderResults(payload) {
             ${renderMonthlyStat("Coste actual mensual", formatCurrency(economic.currentMonthlyCost))}
             ${renderMonthlyStat("Coste eléctrico mensual", formatCurrency(economic.estimatedElectricMonthlyCost))}
           </div>
+
+          ${renderEconomicBreakdown(economic)}
         </article>
 
         <article class="result-card reveal">
@@ -1321,7 +1664,9 @@ function renderResults(payload) {
             <p class="section-kicker">Cifras clave para contrastar compra, uso y retorno económico.</p>
           </div>
           <div class="metric-grid metric-grid--executive">
-            ${renderMetric("Ahorro anual estimado", formatSignedCurrency(economic.annualSavings), getValueTone(economic.annualSavings))}
+            ${renderMetric("Ahorro energético anual", formatSignedCurrency(economic.energyAnnualSavings), getValueTone(economic.energyAnnualSavings))}
+            ${renderMetric("Mantenimiento anual", getMaintenanceDisplay(economic), economic.maintenance.included ? getValueTone(economic.maintenance.annualSavings) : "neutral")}
+            ${renderMetric("Ahorro total anual estimado", formatSignedCurrency(economic.annualSavings), getValueTone(economic.annualSavings))}
             ${renderMetric("Ahorro mensual estimado", formatSignedCurrency(economic.monthlySavings), getValueTone(economic.monthlySavings))}
             ${renderMetric("Coste actual por km", formatCurrencyPerKm(economic.currentCostPerKm))}
             ${renderMetric("Coste eléctrico por km", formatCurrencyPerKm(economic.electricCostPerKmAdjusted))}
@@ -1469,13 +1814,14 @@ function clearDraft() {
 }
 
 function updateProgress() {
-  const answered = QUESTIONS.filter((question) => isQuestionAnswered(question)).length;
-  dom.progressText.textContent = `${answered} de ${QUESTIONS.length} respuestas completadas`;
-  dom.progressBar.style.width = `${(answered / QUESTIONS.length) * 100}%`;
+  const answered = REQUIRED_QUESTIONS.filter((question) => isQuestionAnswered(question)).length;
+  dom.progressText.textContent = `${answered} de ${REQUIRED_QUESTIONS.length} respuestas clave completadas`;
+  dom.progressBar.style.width = `${(answered / REQUIRED_QUESTIONS.length) * 100}%`;
 
   FORM_SECTIONS.forEach((section) => {
-    const answeredInSection = section.questions.filter((question) => isQuestionAnswered(question)).length;
-    const label = `${answeredInSection} / ${section.questions.length}`;
+    const requiredInSection = getRequiredQuestions(section);
+    const answeredInSection = requiredInSection.filter((question) => isQuestionAnswered(question)).length;
+    const label = `${answeredInSection} / ${requiredInSection.length}`;
     const countNode = document.querySelector(`#nav-count-${section.id}`);
     const badgeNode = document.querySelector(`#badge-${section.id}`);
     if (countNode) countNode.textContent = label;
@@ -1484,6 +1830,7 @@ function updateProgress() {
 }
 
 function isQuestionAnswered(question) {
+  if (!isQuestionVisible(question)) return false;
   const value = getFieldValue(question);
   return value !== "" && value !== null && typeof value !== "undefined";
 }
@@ -1565,6 +1912,20 @@ function buildAmortizationSentence(economic) {
   if (economic.initialPremium <= 0) return "Además, no existe sobrecoste inicial frente a la alternativa térmica considerada.";
   if (economic.annualSavings <= 0) return "Con estas cifras no aparece una amortización económica del sobrecoste inicial.";
   return `El sobrecoste inicial se recuperaría en torno a ${formatYears(economic.amortizationYears)}.`;
+}
+
+function buildEconomicNarrative(economic) {
+  const maintenanceText = economic.maintenance.included
+    ? ` Al incluir mantenimiento, el efecto anual adicional es ${formatSignedCurrency(economic.maintenance.annualSavings)}.`
+    : " No se ha incluido mantenimiento porque no se han introducido ambos importes.";
+  const aidText = economic.publicAid.hasAmount
+    ? ` La ayuda pública estimada se muestra como escenario aparte: no sustituye el cálculo prudente sin ayuda.`
+    : "";
+  const liquidityText = economic.publicAid.liquidityWarning
+    ? " Además, depender de una ayuda cobrada más adelante puede crear tensión de liquidez inicial."
+    : "";
+
+  return `En dinero, el coste energético pasaría de unos ${formatCurrency(economic.currentAnnualCost)} al año a ${formatCurrency(economic.estimatedElectricAnnualCost)} en el escenario eléctrico.${maintenanceText} ${buildAmortizationSentence(economic)}${aidText}${liquidityText}`;
 }
 
 function buildFinalConclusion(verdict, scoring, hasCoherenceWarnings) {
@@ -1698,6 +2059,67 @@ function renderMonthlyStat(label, value) {
   `;
 }
 
+function renderEconomicBreakdown(economic) {
+  return `
+    <div class="economic-breakdown">
+      <div class="economic-breakdown__head">
+        <h5>Qué incluye el ahorro anual</h5>
+        <p>Este resultado combina el ahorro energético con el mantenimiento solo si has introducido ambos datos de mantenimiento.</p>
+      </div>
+      <div class="economic-breakdown__grid">
+        ${renderBreakdownItem("Ahorro energético anual", formatSignedCurrency(economic.energyAnnualSavings), getValueTone(economic.energyAnnualSavings), "Diferencia entre combustible actual y electricidad estimada.")}
+        ${renderBreakdownItem("Mantenimiento anual", getMaintenanceDisplay(economic), economic.maintenance.included ? getValueTone(economic.maintenance.annualSavings) : "neutral", economic.maintenance.message)}
+        ${renderBreakdownItem("Ahorro total anual", formatSignedCurrency(economic.annualSavings), getValueTone(economic.annualSavings), "Base usada para ahorro acumulado y amortización.")}
+      </div>
+      ${renderPublicAidScenario(economic)}
+    </div>
+  `;
+}
+
+function renderBreakdownItem(label, value, tone, caption) {
+  return `
+    <div class="breakdown-item breakdown-item--${tone}">
+      <span>${label}</span>
+      <strong>${value}</strong>
+      <small>${caption}</small>
+    </div>
+  `;
+}
+
+function renderPublicAidScenario(economic) {
+  if (!economic.publicAid.hasAmount) {
+    return `
+      <p class="economic-breakdown__note">
+        No se ha aplicado ninguna ayuda pública estimada. Si existe una ayuda, úsala solo como escenario orientativo y confirma siempre las condiciones oficiales.
+      </p>
+    `;
+  }
+
+  return `
+    <div class="aid-scenario">
+      <div>
+        <span>Escenario con ayuda estimada</span>
+        <strong>${formatCurrency(economic.publicAid.amount)}</strong>
+      </div>
+      <div>
+        <span>Sobrecoste con ayuda</span>
+        <strong>${formatSignedCurrency(economic.publicAid.initialPremiumWithAid)}</strong>
+      </div>
+      <div>
+        <span>Amortización con ayuda</span>
+        <strong>${economic.publicAid.amortizationYears === null ? "Sin amortización" : formatYears(economic.publicAid.amortizationYears)}</strong>
+      </div>
+      <p>${economic.publicAid.amortizationMessage}</p>
+      ${economic.publicAid.liquidityWarning ? `<p class="aid-scenario__warning">Esta compra puede tener tensión de liquidez si dependes de una ayuda que se cobra más adelante.</p>` : ""}
+    </div>
+  `;
+}
+
+function getMaintenanceDisplay(economic) {
+  if (!economic.maintenance.included) return "No incluido";
+  return formatSignedCurrency(economic.maintenance.annualSavings);
+}
+
 function renderImpactCard(label, value, caption, tone = "neutral") {
   return `
     <div class="impact-card impact-card--${tone}">
@@ -1731,9 +2153,9 @@ function buildCostChartMarkup(economic) {
   );
 
   return `
-    ${renderChartRow("Coste anual actual", formatCurrency(economic.currentAnnualCost), (economic.currentAnnualCost / maxValue) * 100, "current")}
-    ${renderChartRow("Coste anual estimado en eléctrico", formatCurrency(economic.estimatedElectricAnnualCost), (economic.estimatedElectricAnnualCost / maxValue) * 100, "electric")}
-    ${renderChartRow(economic.annualSavings >= 0 ? "Ahorro anual estimado" : "Sobrecoste anual estimado", formatSignedCurrency(economic.annualSavings), (Math.abs(economic.annualSavings) / maxValue) * 100, economic.annualSavings >= 0 ? "savings" : "risk")}
+    ${renderChartRow("Coste energético anual actual", formatCurrency(economic.currentAnnualCost), (economic.currentAnnualCost / maxValue) * 100, "current")}
+    ${renderChartRow("Coste energético anual estimado en eléctrico", formatCurrency(economic.estimatedElectricAnnualCost), (economic.estimatedElectricAnnualCost / maxValue) * 100, "electric")}
+    ${renderChartRow(economic.annualSavings >= 0 ? "Ahorro total anual estimado" : "Sobrecoste total anual estimado", formatSignedCurrency(economic.annualSavings), (Math.abs(economic.annualSavings) / maxValue) * 100, economic.annualSavings >= 0 ? "savings" : "risk")}
   `;
 }
 
@@ -1787,6 +2209,12 @@ function parseFlexibleNumber(value, options = {}) {
   // 1.62 -> 1.62
   // 2 -> 2
   // 1,5 -> 1.5
+  // 6,5 -> 6.5
+  // 6.5 -> 6.5
+  // 0,15 -> 0.15
+  // 0.15 -> 0.15
+  // 12000 -> 12000
+  // 12.000 -> 12000 en importes/enteros; en campos decimales se interpreta como 12 para evitar inflar consumos o precios.
   if (value === null || typeof value === "undefined") return null;
 
   const { preferDecimal = false } = options;
